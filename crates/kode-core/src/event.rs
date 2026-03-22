@@ -5,8 +5,30 @@ pub enum KodeEvent {
     Mouse(MouseEvent),
     Resize { width: u32, height: u32 },
     Command(EditorCommand),
+    Lsp(LspEvent),
     Tick,
     Quit,
+}
+
+/// Events from LSP servers.
+#[derive(Debug, Clone)]
+pub enum LspEvent {
+    /// Diagnostics received for a document.
+    Diagnostics {
+        uri: String,
+        error_count: usize,
+        warning_count: usize,
+    },
+    /// Completion items ready for display.
+    CompletionReady { items: Vec<String> },
+    /// Hover information ready for display.
+    HoverReady { contents: Option<String> },
+    /// Go-to-definition locations ready.
+    GotoReady { locations: Vec<(String, u32, u32)> },
+    /// LSP server started for a language.
+    ServerStarted { language_id: String },
+    /// LSP server stopped.
+    ServerStopped { language_id: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

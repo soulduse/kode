@@ -95,13 +95,19 @@
 ## Phase 3: 언어 통합
 
 ### Step 11: kode-lsp 클라이언트
-- [ ] transport.rs — JSON-RPC 전송
-- [ ] client.rs — LSP 클라이언트
-- [ ] completion.rs — 자동완성
-- [ ] diagnostics.rs — 진단
-- [ ] hover.rs — 호버 정보
-- [ ] goto.rs — 정의 점프
-- [ ] code_action.rs — 코드 액션
+- [x] jsonrpc.rs — JSON-RPC 2.0 직렬화/역직렬화, Content-Length 프레이밍
+- [x] transport.rs — LSP 서버 프로세스 spawn, tokio 비동기 stdio 통신
+- [x] client.rs — LSP 클라이언트 (initialize, shutdown, didOpen/Change/Close/Save)
+- [x] capabilities.rs — 서버 기능 확인
+- [x] completion.rs — 자동완성 (CompletionList/Array 파싱)
+- [x] diagnostics.rs — DiagnosticStore (문서별 진단 관리)
+- [x] hover.rs — 호버 정보 (MarkedString/MarkupContent 추출)
+- [x] goto.rs — 정의 점프, 구현 점프, 참조 찾기
+- [x] code_action.rs — 코드 액션 + WorkspaceEdit 수집
+- [x] symbols.rs — 문서/워크스페이스 심볼 (중첩 → 플랫 변환)
+- [x] manager.rs — LspManager 다중 서버 관리 (언어별 자동 시작)
+- [x] event.rs — KodeEvent에 LspEvent 추가
+- [x] app.rs — LspManager 통합
 
 ### Step 12: Kotlin LSP 서버 (JVM)
 - [ ] Gradle 프로젝트 설정

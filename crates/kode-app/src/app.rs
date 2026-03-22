@@ -9,6 +9,7 @@ use kode_editor::document::Document;
 use kode_keymap::mode::Mode;
 use kode_keymap::parser::{Action, KeyParser, ParseResult};
 use kode_keymap::workspace_keys::WorkspaceAction;
+use kode_lsp::LspManager;
 use kode_terminal::Terminal;
 use kode_workspace::layout::{Direction, FocusDirection, LayoutNode};
 use kode_workspace::pane::{Pane, PaneContent, PaneId};
@@ -26,6 +27,7 @@ pub struct App {
     pub panes: HashMap<PaneId, Pane>,
     pub session: Session,
     pub key_parser: KeyParser,
+    pub lsp_manager: LspManager,
     pub focused_pane: PaneId,
     next_doc_id: usize,
     next_term_id: usize,
@@ -57,6 +59,7 @@ impl App {
             panes,
             session,
             key_parser: KeyParser::new(),
+            lsp_manager: LspManager::new(),
             focused_pane: 0,
             next_doc_id: 1,
             next_term_id: 0,

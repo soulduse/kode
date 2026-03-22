@@ -16,6 +16,7 @@ kode-renderer = { path = "../kode-renderer" }
 kode-gpu = { path = "../kode-gpu" }
 kode-workspace = { path = "../kode-workspace" }
 kode-terminal = { path = "../kode-terminal" }
+kode-lsp = { path = "../kode-lsp" }
 clap = { version = "4", features = ["derive"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
