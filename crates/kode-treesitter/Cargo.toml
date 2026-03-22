@@ -1,0 +1,10 @@
+[package]
+name = "kode-treesitter"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kode-core = { path = "../kode-core" }
+tree-sitter = "0.24"
+tree-sitter-highlight = "0.24"
+tracing = { workspace = true }
