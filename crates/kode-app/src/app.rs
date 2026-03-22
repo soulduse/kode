@@ -437,6 +437,58 @@ impl App {
     }
 }
 
+/// Run the application in TUI mode.
+pub fn run_tui(args: Args) -> KodeResult<()> {
+    let config = if let Some(ref path) = args.config {
+        Config::load(path)?
+    } else {
+        Config::default()
+    };
+
+    let mut documents = HashMap::new();
+    let mut focused_doc = 0;
+
+    // Open files from CLI arguments, or create empty doc
+    if args.files.is_empty() {
+        documents.insert(0, Document::new());
+    } else {
+        for (idx, path) in args.files.iter().enumerate() {
+            match Document::from_file(path.clone()) {
+                Ok(doc) => {
+                    documents.insert(idx, doc);
+                    focused_doc = idx;
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to open {}: {}", path.display(), e);
+                    if documents.is_empty() {
+                        documents.insert(idx, Document::new());
+                    }
+                }
+            }
+        }
+    }
+
+    let pane = Pane::editor(0, focused_doc);
+    let tab = Tab::new(0, "main".into(), 0);
+    let session = Session::new(tab);
+
+    let mut panes = HashMap::new();
+    let mut p = pane;
+    p.focused = true;
+    panes.insert(0, p);
+
+    let app_state = kode_tui::app_bridge::create_app_state(
+        documents,
+        HashMap::new(),
+        panes,
+        session,
+        0,
+    );
+
+    let mut tui_app = kode_tui::TuiApp::new(app_state);
+    kode_tui::event_loop::run(&mut tui_app)
+}
+
 /// Run the application.
 pub fn run(args: Args) -> KodeResult<()> {
     let config = if let Some(ref path) = args.config {

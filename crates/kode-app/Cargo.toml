@@ -19,6 +19,7 @@ kode-terminal = { path = "../kode-terminal" }
 kode-lsp = { path = "../kode-lsp" }
 kode-spring = { path = "../kode-spring" }
 kode-plugin = { path = "../kode-plugin" }
+kode-tui = { path = "../kode-tui" }
 clap = { version = "4", features = ["derive"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
