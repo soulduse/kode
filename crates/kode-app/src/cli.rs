@@ -8,9 +8,9 @@ pub struct Args {
     /// File(s) to open
     pub files: Vec<PathBuf>,
 
-    /// Use TUI mode instead of GPU rendering
+    /// Use GPU rendering instead of TUI (experimental)
     #[arg(long)]
-    pub tui: bool,
+    pub gpu: bool,
 
     /// Path to configuration file
     #[arg(long)]
