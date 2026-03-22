@@ -1,0 +1,9 @@
+[package]
+name = "kode-tui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kode-core = { path = "../kode-core" }
+crossterm = "0.28"
+tracing = { workspace = true }

@@ -1,0 +1,11 @@
+[package]
+name = "kode-gpu"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kode-core = { path = "../kode-core" }
+kode-renderer = { path = "../kode-renderer" }
+wgpu = "24"
+winit = "0.30"
+tracing = { workspace = true }
