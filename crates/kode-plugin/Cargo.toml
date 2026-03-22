@@ -5,4 +5,11 @@ edition.workspace = true
 
 [dependencies]
 kode-core = { path = "../kode-core" }
+wasmtime = "28"
+wasmtime-wasi = "28"
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
 tracing = { workspace = true }
+dirs-next = "2"
+anyhow = "1"
