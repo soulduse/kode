@@ -1,0 +1,10 @@
+[package]
+name = "kode-workspace"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kode-core = { path = "../kode-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
