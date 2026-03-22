@@ -155,6 +155,21 @@
 
 ---
 
+## Phase 6: TUI 렌더링
+
+### Step 16: TUI 기반 렌더링
+- [x] event.rs — crossterm → KodeEvent 변환 (키보드, 마우스)
+- [x] colors.rs — kode Color → ratatui Color, ThemeStyles 매핑
+- [x] editor_view.rs — 에디터 렌더링 (거터, 텍스트, 커서, 스크롤바, 줄 하이라이트)
+- [x] terminal_view.rs — alacritty 그리드 → ratatui 셀 렌더링
+- [x] chrome.rs — 탭 바, 상태 줄, 패인 테두리
+- [x] ui.rs — 프레임 렌더링 오케스트레이션
+- [x] event_loop.rs — raw mode + poll 루프 + 터미널 키 전달
+- [x] app_bridge — TUI용 앱 상태 (에디터 명령, 모션, 워크스페이스 액션 처리)
+- [x] main.rs — --tui 플래그 진입점
+
+---
+
 ## 결정 로그
 
 | 날짜 | 결정 | 사유 |
@@ -165,3 +180,5 @@
 | 2026-03-22 | alacritty_terminal 사용 | 터미널 에뮬레이터 직접 구현은 수개월 소요 |
 | 2026-03-22 | 함수 기반 ABI (WIT 대신) | 개인 프로젝트에 WIT Component Model은 과도, JSON 교환이 디버깅 용이 |
 | 2026-03-22 | wasmtime 28 + fuel 메터링 | 플러그인 타임아웃/메모리 제한을 위한 샌드박스 |
+| 2026-03-22 | ratatui (raw crossterm 대신) | diff 기반 렌더링, Widget 시스템이 패인 레이아웃에 자연스러움 |
+| 2026-03-22 | RenderCommand 우회 | GPU용 float 좌표를 TUI 셀로 변환은 비효율적, App 상태에서 직접 렌더링 |
