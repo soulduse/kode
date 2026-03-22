@@ -1,21 +1,15 @@
-/// LSP client implementation (Phase 3).
-///
-/// Will provide:
-/// - JSON-RPC transport over stdio
-/// - LSP client with capability negotiation
-/// - Completion, diagnostics, hover, go-to-definition
-pub struct LspClient {
-    _placeholder: (),
-}
+pub mod capabilities;
+pub mod client;
+pub mod code_action;
+pub mod completion;
+pub mod diagnostics;
+pub mod goto;
+pub mod hover;
+pub mod jsonrpc;
+pub mod manager;
+pub mod symbols;
+pub mod transport;
 
-impl LspClient {
-    pub fn new() -> Self {
-        Self { _placeholder: () }
-    }
-}
-
-impl Default for LspClient {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+pub use client::LspClient;
+pub use diagnostics::DiagnosticStore;
+pub use manager::{LspManager, LspServerConfig};
