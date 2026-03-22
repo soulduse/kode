@@ -7,8 +7,20 @@ pub enum KodeEvent {
     Command(EditorCommand),
     Lsp(LspEvent),
     Spring(SpringEvent),
+    Plugin(PluginCoreEvent),
     Tick,
     Quit,
+}
+
+/// Events from the WASM plugin system.
+#[derive(Debug, Clone)]
+pub enum PluginCoreEvent {
+    /// Plugin decorations ready for a buffer.
+    DecorationsReady { uri: String },
+    /// A plugin was loaded successfully.
+    PluginLoaded { name: String },
+    /// A plugin encountered an error.
+    PluginError { name: String, message: String },
 }
 
 /// Events from Spring integration.

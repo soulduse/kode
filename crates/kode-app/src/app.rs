@@ -10,6 +10,7 @@ use kode_keymap::mode::Mode;
 use kode_keymap::parser::{Action, KeyParser, ParseResult};
 use kode_keymap::workspace_keys::WorkspaceAction;
 use kode_lsp::LspManager;
+use kode_plugin::PluginManager;
 use kode_terminal::Terminal;
 use kode_workspace::layout::{Direction, FocusDirection, LayoutNode};
 use kode_workspace::pane::{Pane, PaneContent, PaneId};
@@ -28,6 +29,7 @@ pub struct App {
     pub session: Session,
     pub key_parser: KeyParser,
     pub lsp_manager: LspManager,
+    pub plugin_manager: PluginManager,
     pub focused_pane: PaneId,
     next_doc_id: usize,
     next_term_id: usize,
@@ -60,6 +62,11 @@ impl App {
             session,
             key_parser: KeyParser::new(),
             lsp_manager: LspManager::new(),
+            plugin_manager: {
+                let mut pm = PluginManager::new();
+                pm.discover(&PluginManager::default_plugin_dir());
+                pm
+            },
             focused_pane: 0,
             next_doc_id: 1,
             next_term_id: 0,
@@ -198,6 +205,36 @@ impl App {
             "endpoints" => {
                 tracing::info!("Requesting Spring endpoints...");
                 // Spring endpoints will be fetched via spring/endpoints method
+            }
+            "plugins" => {
+                let plugins = self.plugin_manager.list_plugins();
+                for p in &plugins {
+                    tracing::info!(
+                        "  {} v{} — {}",
+                        p.name,
+                        p.version,
+                        p.description.as_deref().unwrap_or("")
+                    );
+                }
+                if plugins.is_empty() {
+                    tracing::info!("No plugins loaded");
+                }
+            }
+            cmd if cmd.starts_with("plugin-enable ") => {
+                let name = cmd.strip_prefix("plugin-enable ").unwrap_or("");
+                if self.plugin_manager.enable_plugin(name) {
+                    tracing::info!("Plugin '{}' enabled", name);
+                } else {
+                    tracing::warn!("Plugin '{}' not found", name);
+                }
+            }
+            cmd if cmd.starts_with("plugin-disable ") => {
+                let name = cmd.strip_prefix("plugin-disable ").unwrap_or("");
+                if self.plugin_manager.disable_plugin(name) {
+                    tracing::info!("Plugin '{}' disabled", name);
+                } else {
+                    tracing::warn!("Plugin '{}' not found", name);
+                }
             }
             cmd if cmd.starts_with("gradle ") => {
                 let task = cmd.strip_prefix("gradle ").unwrap_or("");
