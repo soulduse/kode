@@ -1,0 +1,12 @@
+[package]
+name = "kode-terminal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kode-core = { path = "../kode-core" }
+alacritty_terminal = "0.25"
+nix = { version = "0.29", features = ["term", "process", "signal", "ioctl", "fs"] }
+libc = "0.2"
+tokio = { workspace = true }
+tracing = { workspace = true }
