@@ -138,14 +138,20 @@
 
 ## Phase 5: 플러그인 시스템
 
-### Step 14: WASM 플러그인
-- [ ] kode.wit — WIT 인터페이스
-- [ ] host.rs — wasmtime 호스트
-- [ ] manifest.rs — plugin.toml
-- [ ] registry.rs — 플러그인 디스커버리
-- [ ] 예시: Git blame 플러그인
-- [ ] 예시: Bracket colorizer 플러그인
-- [ ] 예시: TODO highlighter 플러그인
+### Step 14: WASM 플러그인 런타임
+- [x] abi.rs — 플러그인 ABI 타입 (PluginEvent, PluginResponse, Decoration)
+- [x] manifest.rs — plugin.toml 매니페스트 파싱 (이벤트 구독, 리소스 제한)
+- [x] host.rs — wasmtime 호스트 (fuel 메터링, StoreLimits, WASI 샌드박스, 호스트 임포트)
+- [x] registry.rs — PluginManager (디스커버리, 디스패치, 데코레이션 캐시)
+- [x] event_bridge.rs — KodeEvent → PluginEvent 매핑
+- [x] PluginCoreEvent — KodeEvent에 Plugin 이벤트 추가
+- [x] App 통합 — :plugins, :plugin-enable, :plugin-disable 커맨드
+
+### Step 15: Plugin SDK + 예시 플러그인
+- [x] kode-plugin-sdk — 플러그인 공통 SDK (alloc/dealloc, 호스트 임포트 래퍼)
+- [x] todo-highlighter — TODO/FIXME/HACK/XXX 하이라이팅
+- [x] bracket-colorizer — 깊이별 무지개 괄호 색상화
+- [x] git-blame — 커서 줄 blame 주석 (placeholder)
 
 ---
 
@@ -157,3 +163,5 @@
 | 2026-03-22 | fwcd/kotlin-language-server 포크 | 처음부터 만들기보다 기존 구현 확장이 효율적 |
 | 2026-03-22 | cosmic-text 선택 (glyphon 대신) | 에디터 특화 텍스트 레이아웃에 더 유연 |
 | 2026-03-22 | alacritty_terminal 사용 | 터미널 에뮬레이터 직접 구현은 수개월 소요 |
+| 2026-03-22 | 함수 기반 ABI (WIT 대신) | 개인 프로젝트에 WIT Component Model은 과도, JSON 교환이 디버깅 용이 |
+| 2026-03-22 | wasmtime 28 + fuel 메터링 | 플러그인 타임아웃/메모리 제한을 위한 샌드박스 |

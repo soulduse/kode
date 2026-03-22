@@ -1,0 +1,12 @@
+[plugin]
+name = "bracket-colorizer"
+version = "0.1.0"
+description = "Rainbow bracket colorization based on nesting depth"
+wasm = "plugin.wasm"
+
+[events]
+subscribe = ["buffer_open", "buffer_change"]
+
+[limits]
+max_memory_mb = 32
+timeout_ms = 100

@@ -1,0 +1,12 @@
+[plugin]
+name = "git-blame"
+version = "0.1.0"
+description = "Shows git blame annotations for the current line"
+wasm = "plugin.wasm"
+
+[events]
+subscribe = ["cursor_move", "buffer_open"]
+
+[limits]
+max_memory_mb = 32
+timeout_ms = 200

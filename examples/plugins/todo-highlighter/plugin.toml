@@ -1,0 +1,12 @@
+[plugin]
+name = "todo-highlighter"
+version = "0.1.0"
+description = "Highlights TODO, FIXME, HACK, and XXX comments"
+wasm = "plugin.wasm"
+
+[events]
+subscribe = ["buffer_open", "buffer_change"]
+
+[limits]
+max_memory_mb = 32
+timeout_ms = 100
