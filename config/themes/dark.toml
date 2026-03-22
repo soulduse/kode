@@ -1,0 +1,18 @@
+[colors]
+background = "#1e1e2e"
+foreground = "#cdd6f4"
+cursor = "#f5e0dc"
+selection = "#45475a"
+line_highlight = "#313244"
+gutter = "#6c7086"
+gutter_active = "#cdd6f4"
+
+[syntax]
+comment = "#6c7086"
+keyword = "#cba6f7"
+string = "#a6e3a1"
+number = "#fab387"
+function = "#89b4fa"
+type = "#f9e2af"
+variable = "#cdd6f4"
+operator = "#89dceb"

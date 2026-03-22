@@ -1,0 +1,7 @@
+# Custom keybindings
+# Format: mode.key = "action"
+# Example: normal."Ctrl+s" = "save"
+
+# Workspace prefix (tmux-style)
+[workspace]
+prefix = "Ctrl+a"

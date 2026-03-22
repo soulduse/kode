@@ -1,0 +1,14 @@
+[editor]
+font_family = "JetBrains Mono"
+font_size = 14.0
+tab_width = 4
+insert_spaces = true
+line_numbers = true
+word_wrap = false
+scroll_off = 5
+
+[theme]
+name = "dark"
+
+[keymap]
+mode = "vim"
