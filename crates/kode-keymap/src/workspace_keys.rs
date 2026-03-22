@@ -20,6 +20,7 @@ pub enum WorkspaceAction {
     ClosePane,
     ZoomPane,
     NewTerminal,
+    ToggleExplorer,
     Detach,
     Equalize,
 }
@@ -53,6 +54,7 @@ pub fn parse_workspace_key(key: &KeyEvent) -> Option<WorkspaceAction> {
         KeyCode::Char('x') => Some(WorkspaceAction::ClosePane),
         KeyCode::Char('z') => Some(WorkspaceAction::ZoomPane),
         KeyCode::Char('t') => Some(WorkspaceAction::NewTerminal),
+        KeyCode::Char('e') => Some(WorkspaceAction::ToggleExplorer),
         KeyCode::Char('=') => Some(WorkspaceAction::Equalize),
 
         // Session

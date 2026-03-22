@@ -1,5 +1,5 @@
 [package]
-name = "kode-tui"
+name = "kode-state"
 version.workspace = true
 edition.workspace = true
 
@@ -9,7 +9,4 @@ kode-editor = { path = "../kode-editor" }
 kode-keymap = { path = "../kode-keymap" }
 kode-workspace = { path = "../kode-workspace" }
 kode-terminal = { path = "../kode-terminal" }
-kode-state = { path = "../kode-state" }
-crossterm = "0.28"
-ratatui = "0.29"
 tracing = { workspace = true }

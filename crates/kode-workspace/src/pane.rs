@@ -8,6 +8,7 @@ pub enum PaneContent {
     Terminal(usize),
     BeanExplorer,
     EndpointExplorer,
+    FileExplorer(usize),
 }
 
 /// A pane in the workspace.
@@ -31,6 +32,14 @@ impl Pane {
         Self {
             id,
             content: PaneContent::Terminal(term_id),
+            focused: false,
+        }
+    }
+
+    pub fn file_explorer(id: PaneId, explorer_id: usize) -> Self {
+        Self {
+            id,
+            content: PaneContent::FileExplorer(explorer_id),
             focused: false,
         }
     }

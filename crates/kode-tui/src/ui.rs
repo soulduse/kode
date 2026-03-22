@@ -7,6 +7,7 @@ use ratatui::Frame;
 use crate::chrome;
 use crate::colors::{theme_styles, ThemeStyles};
 use crate::editor_view;
+use crate::explorer_view;
 use crate::terminal_view;
 
 /// Main draw function — renders the entire TUI frame.
@@ -64,6 +65,7 @@ pub fn draw(frame: &mut Frame, app: &crate::AppView) {
             PaneContent::Terminal(_) => "terminal".to_string(),
             PaneContent::BeanExplorer => "beans".to_string(),
             PaneContent::EndpointExplorer => "endpoints".to_string(),
+            PaneContent::FileExplorer(_) => "explorer".to_string(),
         };
 
         chrome::render_pane_border(frame, tui_rect, pane.focused, &title, &styles);
@@ -81,6 +83,11 @@ pub fn draw(frame: &mut Frame, app: &crate::AppView) {
             PaneContent::Terminal(term_id) => {
                 if let Some(terminal) = app.terminals.get(&term_id) {
                     terminal_view::render_terminal(frame, inner, terminal);
+                }
+            }
+            PaneContent::FileExplorer(explorer_id) => {
+                if let Some(explorer) = app.explorers.get(&explorer_id) {
+                    explorer_view::render_explorer(frame, inner, explorer, pane.focused, &styles);
                 }
             }
             _ => {}
