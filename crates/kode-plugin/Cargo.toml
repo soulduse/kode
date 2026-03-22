@@ -1,0 +1,8 @@
+[package]
+name = "kode-plugin"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kode-core = { path = "../kode-core" }
+tracing = { workspace = true }
