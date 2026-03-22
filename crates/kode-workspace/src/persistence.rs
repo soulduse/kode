@@ -67,6 +67,9 @@ pub fn save_session(
                         file: None,
                         cwd: terminal_cwds.get(&term_id).cloned(),
                     },
+                    PaneContent::BeanExplorer | PaneContent::EndpointExplorer => {
+                        continue; // Skip non-persistent panes
+                    }
                 };
                 pane_states.push(state);
             }

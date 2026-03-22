@@ -6,8 +6,22 @@ pub enum KodeEvent {
     Resize { width: u32, height: u32 },
     Command(EditorCommand),
     Lsp(LspEvent),
+    Spring(SpringEvent),
     Tick,
     Quit,
+}
+
+/// Events from Spring integration.
+#[derive(Debug, Clone)]
+pub enum SpringEvent {
+    /// Spring beans indexed and ready.
+    BeansReady { count: usize },
+    /// REST endpoints indexed and ready.
+    EndpointsReady { count: usize },
+    /// Bean dependency graph ready.
+    GraphReady,
+    /// Indexing progress update.
+    IndexProgress { percent: u8, message: String },
 }
 
 /// Events from LSP servers.

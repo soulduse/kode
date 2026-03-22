@@ -6,6 +6,8 @@ pub type PaneId = usize;
 pub enum PaneContent {
     Editor(usize),
     Terminal(usize),
+    BeanExplorer,
+    EndpointExplorer,
 }
 
 /// A pane in the workspace.
