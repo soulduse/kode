@@ -5,7 +5,16 @@ edition.workspace = true
 
 [dependencies]
 kode-core = { path = "../kode-core" }
+kode-editor = { path = "../kode-editor" }
+kode-keymap = { path = "../kode-keymap" }
 kode-renderer = { path = "../kode-renderer" }
+kode-state = { path = "../kode-state" }
+kode-terminal = { path = "../kode-terminal" }
+kode-workspace = { path = "../kode-workspace" }
+bytemuck = { version = "1", features = ["derive"] }
+glyphon = "0.8"
+rfd = "0.15"
 wgpu = "24"
 winit = "0.30"
+pollster = "0.4"
 tracing = { workspace = true }
