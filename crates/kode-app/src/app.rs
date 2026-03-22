@@ -191,6 +191,19 @@ impl App {
                 self.handle_command_line("w");
                 self.quit();
             }
+            "beans" => {
+                tracing::info!("Requesting Spring beans...");
+                // Spring beans will be fetched via LspManager's spring/beans method
+            }
+            "endpoints" => {
+                tracing::info!("Requesting Spring endpoints...");
+                // Spring endpoints will be fetched via spring/endpoints method
+            }
+            cmd if cmd.starts_with("gradle ") => {
+                let task = cmd.strip_prefix("gradle ").unwrap_or("");
+                tracing::info!("Running Gradle task: {}", task);
+                // Gradle task will be executed via spring/runTask method
+            }
             _ => {
                 tracing::warn!("Unknown command: :{}", cmd);
             }
@@ -308,6 +321,9 @@ impl App {
                 }
                 PaneContent::Terminal(term_id) => {
                     self.terminals.remove(&term_id);
+                }
+                PaneContent::BeanExplorer | PaneContent::EndpointExplorer => {
+                    // No resources to clean up
                 }
             }
         }

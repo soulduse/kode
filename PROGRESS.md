@@ -110,26 +110,29 @@
 - [x] app.rs — LspManager 통합
 
 ### Step 12: Kotlin LSP 서버 (JVM)
-- [ ] Gradle 프로젝트 설정
-- [ ] KotlinLspServer.kt — 서버 메인
-- [ ] KotlinAnalyzer.kt — 컴파일러 API
-- [ ] CompletionProvider.kt
-- [ ] DiagnosticProvider.kt
-- [ ] NavigationProvider.kt
-- [ ] HoverProvider.kt
+- [x] Gradle 프로젝트 설정 (kotlin-lsp/, shadow jar, JDK 17)
+- [x] KodeLspServer.kt — LSP 서버 메인 (lsp4j LanguageServer)
+- [x] KodeTextDocumentService.kt — textDocument/* 요청 프록시
+- [x] CustomMethodHandler.kt — spring/* 커스텀 메서드 라우팅
+- [x] ProcessProxy.kt — fwcd/kotlin-language-server 사이드카 프록시
 
 ---
 
 ## Phase 4: Spring 통합
 
 ### Step 13: Spring 인텔리전스
-- [ ] SpringIndexer.kt — 어노테이션 인덱싱
-- [ ] BeanGraphBuilder.kt — 빈 그래프
-- [ ] YamlCompleter.kt — YAML 자동완성
-- [ ] 엔드포인트 인덱싱
-- [ ] graph.rs — 빈 그래프 시각화 (Rust)
-- [ ] GradleConnector.kt — Gradle 연결
-- [ ] TaskRunner.kt — 태스크 실행
+- [x] SpringIndexer.kt — 어노테이션 인덱싱 (@Service, @Controller, @Bean 등)
+- [x] BeanRegistry.kt — 빈 인메모리 저장소
+- [x] EndpointIndexer.kt — REST 엔드포인트 스캔 (@GetMapping 등)
+- [x] BeanGraphBuilder.kt — 빈 의존성 그래프 (노드/엣지 + 순환 감지)
+- [x] YamlCompleter.kt — application.yml 자동완성 (20+ 기본 프로퍼티)
+- [x] ConfigMetadataParser.kt — spring-configuration-metadata.json 파서
+- [x] graph.rs — 빈 그래프 시각화 (find_dependents, detect_cycles, render_tree)
+- [x] GradleConnector.kt — Gradle Tooling API 연결 + 태스크 조회
+- [x] TaskRunner.kt — Gradle 태스크 실행 + 출력 스트리밍
+- [x] kode-spring 크레이트 — Rust 측 타입(SpringBean, RestEndpoint, BeanGraph) + LSP 클라이언트 래퍼
+- [x] SpringEvent — KodeEvent에 Spring 이벤트 (BeansReady, EndpointsReady 등) 추가
+- [x] App 통합 — :beans, :endpoints, :gradle 커맨드 + PaneContent 확장
 
 ---
 
