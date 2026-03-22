@@ -1,0 +1,22 @@
+[package]
+name = "kode-app"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "kode"
+path = "src/main.rs"
+
+[dependencies]
+kode-core = { path = "../kode-core" }
+kode-editor = { path = "../kode-editor" }
+kode-keymap = { path = "../kode-keymap" }
+kode-treesitter = { path = "../kode-treesitter" }
+kode-renderer = { path = "../kode-renderer" }
+kode-gpu = { path = "../kode-gpu" }
+kode-workspace = { path = "../kode-workspace" }
+kode-terminal = { path = "../kode-terminal" }
+clap = { version = "4", features = ["derive"] }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
