@@ -5,5 +5,10 @@ edition.workspace = true
 
 [dependencies]
 kode-core = { path = "../kode-core" }
+kode-editor = { path = "../kode-editor" }
+kode-keymap = { path = "../kode-keymap" }
+kode-workspace = { path = "../kode-workspace" }
+kode-terminal = { path = "../kode-terminal" }
 crossterm = "0.28"
+ratatui = "0.29"
 tracing = { workspace = true }
