@@ -1,0 +1,10 @@
+[package]
+name = "kode-editor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kode-core = { path = "../kode-core" }
+ropey = "1"
+serde = { workspace = true }
+tracing = { workspace = true }
