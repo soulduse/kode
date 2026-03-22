@@ -13,6 +13,7 @@ use kode_lsp::LspManager;
 use kode_plugin::PluginManager;
 use kode_terminal::Terminal;
 use kode_workspace::layout::{Direction, FocusDirection, LayoutNode};
+use kode_state::FileExplorer;
 use kode_workspace::pane::{Pane, PaneContent, PaneId};
 use kode_workspace::persistence;
 use kode_workspace::session::Session;
@@ -144,6 +145,10 @@ impl App {
             }
             WorkspaceAction::NewTerminal => {
                 self.spawn_terminal_pane();
+            }
+            WorkspaceAction::ToggleExplorer => {
+                // Toggle handled in TUI mode only
+                tracing::info!("Explorer toggle (GPU mode not supported yet)");
             }
             WorkspaceAction::Detach => {
                 self.save_and_quit();
@@ -359,7 +364,7 @@ impl App {
                 PaneContent::Terminal(term_id) => {
                     self.terminals.remove(&term_id);
                 }
-                PaneContent::BeanExplorer | PaneContent::EndpointExplorer => {
+                PaneContent::BeanExplorer | PaneContent::EndpointExplorer | PaneContent::FileExplorer(_) => {
                     // No resources to clean up
                 }
             }
@@ -468,75 +473,65 @@ pub fn run_tui(args: Args) -> KodeResult<()> {
         }
     }
 
-    let pane = Pane::editor(0, focused_doc);
-    let tab = Tab::new(0, "main".into(), 0);
-    let session = Session::new(tab);
+    // Create explorer
+    let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let mut explorers = HashMap::new();
+    explorers.insert(0, FileExplorer::new(0, root));
+
+    // Explorer pane (id=0) on the left, editor pane (id=1) on the right
+    let explorer_pane_id: PaneId = 0;
+    let editor_pane_id: PaneId = 1;
 
     let mut panes = HashMap::new();
-    let mut p = pane;
-    p.focused = true;
-    panes.insert(0, p);
+    panes.insert(explorer_pane_id, Pane::file_explorer(explorer_pane_id, 0));
+    let mut editor_pane = Pane::editor(editor_pane_id, focused_doc);
+    editor_pane.focused = true;
+    panes.insert(editor_pane_id, editor_pane);
+
+    // Layout: 25% explorer | 75% editor
+    let layout = LayoutNode::Split {
+        direction: Direction::Vertical,
+        ratio: 0.25,
+        first: Box::new(LayoutNode::Leaf(explorer_pane_id)),
+        second: Box::new(LayoutNode::Leaf(editor_pane_id)),
+    };
+    let mut tab = Tab::new(0, "main".into(), editor_pane_id);
+    tab.layout = layout;
+    let session = Session::new(tab);
 
     let app_state = kode_tui::app_bridge::create_app_state(
         documents,
         HashMap::new(),
+        explorers,
         panes,
         session,
-        0,
+        editor_pane_id,
     );
 
     let mut tui_app = kode_tui::TuiApp::new(app_state);
     kode_tui::event_loop::run(&mut tui_app)
 }
 
-/// Run the application.
+/// Run the application in GPU mode with a native window.
 pub fn run(args: Args) -> KodeResult<()> {
-    let config = if let Some(ref path) = args.config {
-        Config::load(path)?
+    use kode_gpu::gpu_app::AppScreen;
+
+    if args.files.is_empty() {
+        // No files specified — show Welcome Screen
+        let welcome = kode_gpu::welcome_screen::WelcomeScreen::new();
+        kode_gpu::run_gpu(AppScreen::Welcome(welcome))
     } else {
-        Config::default()
-    };
+        // Files specified — go straight to editor
+        let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
 
-    let mut app = App::new(config);
+        // Record project in recent list
+        let recent_path = kode_workspace::recent_projects::default_recent_projects_path();
+        let mut recent = kode_workspace::recent_projects::load_recent_projects(&recent_path)
+            .unwrap_or_default();
+        kode_workspace::recent_projects::add_recent_project(&mut recent, root.clone());
+        let _ = kode_workspace::recent_projects::save_recent_projects(&recent, &recent_path);
 
-    // Open files from CLI arguments
-    for path in &args.files {
-        match app.open_file(path.clone()) {
-            Ok(_doc_id) => {
-                tracing::info!("Opened: {}", path.display());
-            }
-            Err(e) => {
-                tracing::warn!("Failed to open {}: {}", path.display(), e);
-            }
-        }
+        let state = kode_gpu::project::build_editor_state(root);
+        kode_gpu::run_gpu(AppScreen::Editor(state))
     }
-
-    tracing::info!(
-        "Kode started in {} mode with {} document(s)",
-        if args.tui { "TUI" } else { "GPU" },
-        app.documents.len()
-    );
-
-    println!("kode v{} — press Ctrl+C to exit", env!("CARGO_PKG_VERSION"));
-    println!("Mode: {}", app.mode().display_name());
-    println!("Documents: {}", app.documents.len());
-    println!("Panes: {}", app.panes.len());
-    println!(
-        "Tab: {} ({})",
-        app.session.active_tab().name,
-        app.session.tabs.len()
-    );
-
-    if !args.files.is_empty() {
-        for (id, doc) in &app.documents {
-            println!(
-                "  [{}] {} ({} lines)",
-                id,
-                doc.title(),
-                doc.buffer.line_count()
-            );
-        }
-    }
-
-    Ok(())
 }
