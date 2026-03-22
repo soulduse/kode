@@ -40,11 +40,22 @@ impl KodeTextRenderer {
         }
     }
 
-    /// Create a text buffer with the given text.
+    /// Create a text buffer with the default font size.
     pub fn create_buffer(&mut self, text: &str, width: f32) -> Buffer {
+        self.create_buffer_with_size(text, width, self.font_size, self.line_height)
+    }
+
+    /// Create a text buffer with a custom font size and line height.
+    pub fn create_buffer_with_size(
+        &mut self,
+        text: &str,
+        width: f32,
+        font_size: f32,
+        line_height: f32,
+    ) -> Buffer {
         let mut buffer = Buffer::new(
             &mut self.font_system,
-            Metrics::new(self.font_size, self.line_height),
+            Metrics::new(font_size, line_height),
         );
         buffer.set_size(&mut self.font_system, Some(width), None);
         buffer.set_text(

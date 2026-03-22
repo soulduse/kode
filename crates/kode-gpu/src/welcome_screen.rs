@@ -22,6 +22,22 @@ pub enum WelcomeAction {
     Quit,
 }
 
+// Font sizes for the welcome screen
+pub const TITLE_FONT_SIZE: f32 = 36.0;
+pub const TITLE_LINE_HEIGHT: f32 = 44.0;
+pub const SUBTITLE_FONT_SIZE: f32 = 16.0;
+pub const SUBTITLE_LINE_HEIGHT: f32 = 22.0;
+pub const BUTTON_FONT_SIZE: f32 = 16.0;
+pub const BUTTON_LINE_HEIGHT: f32 = 22.0;
+pub const PROJECT_NAME_FONT_SIZE: f32 = 16.0;
+pub const PROJECT_NAME_LINE_HEIGHT: f32 = 22.0;
+pub const PROJECT_PATH_FONT_SIZE: f32 = 13.0;
+pub const PROJECT_PATH_LINE_HEIGHT: f32 = 18.0;
+pub const HELP_FONT_SIZE: f32 = 12.0;
+pub const HELP_LINE_HEIGHT: f32 = 16.0;
+pub const HEADER_FONT_SIZE: f32 = 14.0;
+pub const HEADER_LINE_HEIGHT: f32 = 20.0;
+
 /// Pre-computed layout coordinates for rendering and hit-testing.
 pub struct WelcomeLayout {
     pub title_y: f32,
@@ -38,28 +54,35 @@ pub struct WelcomeLayout {
     pub content_width: f32,
     pub visible_count: usize,
     pub max_bottom: f32,
+    /// X position for the initial circle (left side of each project item)
+    pub initial_x: f32,
+    /// Width offset for project text after the initial circle
+    pub text_offset: f32,
 }
 
 impl WelcomeLayout {
-    pub fn compute(width: f32, height: f32, line_height: f32) -> Self {
-        let content_width = 500.0f32.min(width - 80.0);
+    pub fn compute(width: f32, height: f32, _line_height: f32) -> Self {
+        let content_width = 600.0f32.min(width - 100.0);
         let content_x = (width - content_width) / 2.0;
 
-        let title_y = height * 0.12;
-        let subtitle_y = title_y + line_height + 4.0;
-        let button_y = subtitle_y + line_height + 24.0;
-        let button_w = 220.0;
-        let button_h = line_height + 12.0;
+        let title_y = height * 0.10;
+        let subtitle_y = title_y + TITLE_LINE_HEIGHT + 8.0;
+        let button_y = subtitle_y + SUBTITLE_LINE_HEIGHT + 32.0;
+        let button_w = 260.0;
+        let button_h = 44.0;
         let button_x = (width - button_w) / 2.0;
 
-        let section_header_y = button_y + button_h + 28.0;
-        let divider_y = section_header_y + line_height + 4.0;
-        let list_start_y = divider_y + 8.0;
+        let section_header_y = button_y + button_h + 40.0;
+        let divider_y = section_header_y + HEADER_LINE_HEIGHT + 8.0;
+        let list_start_y = divider_y + 12.0;
 
-        // Each project item: name line + path line + padding
-        let list_item_height = line_height * 2.0 + 8.0;
-        let available = height - list_start_y - 20.0;
+        // Each project item: name + path + generous padding
+        let list_item_height = PROJECT_NAME_LINE_HEIGHT + PROJECT_PATH_LINE_HEIGHT + 16.0;
+        let available = height - list_start_y - 40.0;
         let visible_count = (available / list_item_height).max(1.0) as usize;
+
+        let initial_x = content_x;
+        let text_offset = 44.0; // space for initial circle + gap
 
         Self {
             title_y,
@@ -76,6 +99,8 @@ impl WelcomeLayout {
             content_width,
             visible_count,
             max_bottom: height,
+            initial_x,
+            text_offset,
         }
     }
 

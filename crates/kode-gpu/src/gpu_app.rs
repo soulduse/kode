@@ -16,7 +16,13 @@ use crate::project::build_editor_state;
 use crate::rect_pipeline::{RectInstance, RectPipeline};
 use crate::surface::GpuSurface;
 use crate::text_render::{KodeTextRenderer, PreparedTextArea};
-use crate::welcome_screen::{WelcomeAction, WelcomeLayout, WelcomeScreen};
+use crate::welcome_screen::{
+    WelcomeAction, WelcomeLayout, WelcomeScreen, BUTTON_FONT_SIZE, BUTTON_LINE_HEIGHT,
+    HEADER_FONT_SIZE, HEADER_LINE_HEIGHT, HELP_FONT_SIZE, HELP_LINE_HEIGHT,
+    PROJECT_NAME_FONT_SIZE, PROJECT_NAME_LINE_HEIGHT, PROJECT_PATH_FONT_SIZE,
+    PROJECT_PATH_LINE_HEIGHT, SUBTITLE_FONT_SIZE, SUBTITLE_LINE_HEIGHT, TITLE_FONT_SIZE,
+    TITLE_LINE_HEIGHT,
+};
 
 // Catppuccin Mocha colors
 const BASE: [f32; 4] = [0.118, 0.118, 0.180, 1.0]; // #1e1e2e
@@ -129,55 +135,103 @@ impl GpuApp {
         let mut rects = Vec::new();
         let mut text_areas: Vec<PreparedTextArea> = Vec::new();
 
-        // "Open Project" button background
+        // ===== Background accent: subtle gradient-like panel behind content =====
+        let panel_top = layout.title_y - 20.0;
+        let panel_bottom = layout.button_y + layout.button_h + 20.0;
+        rects.push(RectInstance {
+            pos: [layout.content_x - 40.0, panel_top],
+            size: [layout.content_width + 80.0, panel_bottom - panel_top],
+            color: [BASE[0], BASE[1], BASE[2], 0.4],
+        });
+
+        // ===== "Open Project" button — BLUE background, more prominent =====
         rects.push(RectInstance {
             pos: [layout.button_x, layout.button_y],
             size: [layout.button_w, layout.button_h],
-            color: SURFACE1,
+            color: BLUE,
         });
 
         // Divider line
         rects.push(RectInstance {
             pos: [layout.content_x, layout.divider_y],
             size: [layout.content_width, 1.0],
-            color: SURFACE0,
+            color: SURFACE1,
         });
 
-        // Selected project highlight
+        // Selected project highlight — rounded feel via slightly inset
         let project_count = ws.recent.projects.len();
         if project_count > 0 && ws.selected < project_count {
             let vis_idx = ws.selected.saturating_sub(ws.scroll_offset);
             let sel_y = layout.list_start_y + vis_idx as f32 * layout.list_item_height;
             if sel_y + layout.list_item_height <= layout.max_bottom {
                 rects.push(RectInstance {
-                    pos: [layout.content_x - 8.0, sel_y],
-                    size: [layout.content_width + 16.0, layout.list_item_height],
+                    pos: [layout.content_x - 12.0, sel_y],
+                    size: [layout.content_width + 24.0, layout.list_item_height],
                     color: SURFACE0,
+                });
+                // Left accent bar for selected item
+                rects.push(RectInstance {
+                    pos: [layout.content_x - 12.0, sel_y + 4.0],
+                    size: [3.0, layout.list_item_height - 8.0],
+                    color: BLUE,
                 });
             }
         }
 
-        // Hover highlight (if different from selection)
+        // Hover highlight
         if let Some(hover_idx) = ws.hover_index {
             if hover_idx != ws.selected && hover_idx < project_count {
                 let hover_vis = hover_idx.saturating_sub(ws.scroll_offset);
-                let hover_y = layout.list_start_y + hover_vis as f32 * layout.list_item_height;
+                let hover_y =
+                    layout.list_start_y + hover_vis as f32 * layout.list_item_height;
                 if hover_y + layout.list_item_height <= layout.max_bottom {
                     rects.push(RectInstance {
-                        pos: [layout.content_x - 8.0, hover_y],
-                        size: [layout.content_width + 16.0, layout.list_item_height],
-                        color: [SURFACE0[0], SURFACE0[1], SURFACE0[2], 0.5],
+                        pos: [layout.content_x - 12.0, hover_y],
+                        size: [layout.content_width + 24.0, layout.list_item_height],
+                        color: [SURFACE0[0], SURFACE0[1], SURFACE0[2], 0.4],
                     });
                 }
             }
         }
 
+        // ===== Initial circles for each visible project =====
+        // Color palette for initials
+        let initial_colors: &[[f32; 4]] = &[BLUE, GREEN, MAUVE, YELLOW,
+            [0.976, 0.616, 0.478, 1.0], // Peach
+            [0.537, 0.706, 0.980, 1.0], // Blue
+            [0.796, 0.651, 0.969, 1.0], // Mauve
+        ];
+        if project_count > 0 {
+            let visible_end =
+                (ws.scroll_offset + layout.visible_count).min(project_count);
+            for i in ws.scroll_offset..visible_end {
+                let vis_idx = i - ws.scroll_offset;
+                let item_y =
+                    layout.list_start_y + vis_idx as f32 * layout.list_item_height;
+                if item_y + layout.list_item_height > layout.max_bottom {
+                    break;
+                }
+                // Circle background for initial letter
+                let circle_size = 32.0;
+                let circle_x = layout.initial_x;
+                let circle_y = item_y + (layout.list_item_height - circle_size) / 2.0;
+                let color_idx = i % initial_colors.len();
+                rects.push(RectInstance {
+                    pos: [circle_x, circle_y],
+                    size: [circle_size, circle_size],
+                    color: initial_colors[color_idx],
+                });
+            }
+        }
+
         // ===== Text =====
 
-        // Title "kode" — centered
-        let title = "kode";
-        let title_buf = text_r.create_buffer(title, width_f);
-        let title_w = title.len() as f32 * text_r.cell_width;
+        // Title "kode" — large, centered
+        let title = "< kode />";
+        let title_cell_w = TITLE_FONT_SIZE * 0.6; // approximate monospace ratio
+        let title_buf =
+            text_r.create_buffer_with_size(title, width_f, TITLE_FONT_SIZE, TITLE_LINE_HEIGHT);
+        let title_w = title.len() as f32 * title_cell_w;
         text_areas.push(PreparedTextArea {
             buffer: title_buf,
             left: (width_f - title_w) / 2.0,
@@ -189,10 +243,16 @@ impl GpuApp {
             color: to_glyphon_color(BLUE),
         });
 
-        // Subtitle — centered
+        // Subtitle — medium, centered
         let subtitle = "A Rust-native IDE";
-        let subtitle_buf = text_r.create_buffer(subtitle, width_f);
-        let subtitle_w = subtitle.len() as f32 * text_r.cell_width;
+        let sub_cell_w = SUBTITLE_FONT_SIZE * 0.6;
+        let subtitle_buf = text_r.create_buffer_with_size(
+            subtitle,
+            width_f,
+            SUBTITLE_FONT_SIZE,
+            SUBTITLE_LINE_HEIGHT,
+        );
+        let subtitle_w = subtitle.len() as f32 * sub_cell_w;
         text_areas.push(PreparedTextArea {
             buffer: subtitle_buf,
             left: (width_f - subtitle_w) / 2.0,
@@ -201,28 +261,39 @@ impl GpuApp {
             bounds_top: 0.0,
             bounds_right: width_f,
             bounds_bottom: height_f,
-            color: to_glyphon_color(OVERLAY0),
+            color: to_glyphon_color(TEXT_COLOR),
         });
 
-        // Button text — centered in button
+        // Button text — white on blue, centered
         let btn_text = "Open Project  (o)";
-        let btn_buf = text_r.create_buffer(btn_text, layout.button_w);
-        let btn_text_w = btn_text.len() as f32 * text_r.cell_width;
+        let btn_cell_w = BUTTON_FONT_SIZE * 0.6;
+        let btn_buf = text_r.create_buffer_with_size(
+            btn_text,
+            layout.button_w,
+            BUTTON_FONT_SIZE,
+            BUTTON_LINE_HEIGHT,
+        );
+        let btn_text_w = btn_text.len() as f32 * btn_cell_w;
         text_areas.push(PreparedTextArea {
             buffer: btn_buf,
             left: layout.button_x + (layout.button_w - btn_text_w) / 2.0,
-            top: layout.button_y + 6.0,
+            top: layout.button_y + (layout.button_h - BUTTON_LINE_HEIGHT) / 2.0,
             bounds_left: layout.button_x,
             bounds_top: layout.button_y,
             bounds_right: layout.button_x + layout.button_w,
             bounds_bottom: layout.button_y + layout.button_h,
-            color: to_glyphon_color(TEXT_COLOR),
+            color: to_glyphon_color(CRUST),
         });
 
         // Section header
         if project_count > 0 {
             let header = "Recent Projects";
-            let header_buf = text_r.create_buffer(header, layout.content_width);
+            let header_buf = text_r.create_buffer_with_size(
+                header,
+                layout.content_width,
+                HEADER_FONT_SIZE,
+                HEADER_LINE_HEIGHT,
+            );
             text_areas.push(PreparedTextArea {
                 buffer: header_buf,
                 left: layout.content_x,
@@ -235,29 +306,65 @@ impl GpuApp {
             });
 
             // Project list
-            let visible_end = (ws.scroll_offset + layout.visible_count).min(project_count);
+            let visible_end =
+                (ws.scroll_offset + layout.visible_count).min(project_count);
             for i in ws.scroll_offset..visible_end {
                 let vis_idx = i - ws.scroll_offset;
-                let item_y = layout.list_start_y + vis_idx as f32 * layout.list_item_height;
+                let item_y =
+                    layout.list_start_y + vis_idx as f32 * layout.list_item_height;
                 if item_y + layout.list_item_height > layout.max_bottom {
                     break;
                 }
 
                 let project = &ws.recent.projects[i];
 
-                // Project name
-                let name_prefix = if i == ws.selected { "▸ " } else { "  " };
-                let name_text = format!("{}{}", name_prefix, project.name);
+                // Initial letter inside circle
+                let initial = project
+                    .name
+                    .chars()
+                    .next()
+                    .unwrap_or('?')
+                    .to_uppercase()
+                    .to_string();
+                let initial_font = 15.0;
+                let initial_cell_w = initial_font * 0.6;
+                let circle_size = 32.0;
+                let circle_x = layout.initial_x;
+                let circle_y = item_y + (layout.list_item_height - circle_size) / 2.0;
+                let init_buf = text_r.create_buffer_with_size(
+                    &initial,
+                    circle_size,
+                    initial_font,
+                    circle_size,
+                );
+                text_areas.push(PreparedTextArea {
+                    buffer: init_buf,
+                    left: circle_x + (circle_size - initial_cell_w) / 2.0,
+                    top: circle_y,
+                    bounds_left: circle_x,
+                    bounds_top: circle_y,
+                    bounds_right: circle_x + circle_size,
+                    bounds_bottom: circle_y + circle_size,
+                    color: to_glyphon_color(CRUST),
+                });
+
+                // Project name — larger font
+                let name_text = project.name.clone();
                 let name_color = if i == ws.selected {
                     to_glyphon_color(BLUE)
                 } else {
                     to_glyphon_color(TEXT_COLOR)
                 };
-                let name_buf = text_r.create_buffer(&name_text, layout.content_width);
+                let name_buf = text_r.create_buffer_with_size(
+                    &name_text,
+                    layout.content_width - layout.text_offset,
+                    PROJECT_NAME_FONT_SIZE,
+                    PROJECT_NAME_LINE_HEIGHT,
+                );
                 text_areas.push(PreparedTextArea {
                     buffer: name_buf,
-                    left: layout.content_x,
-                    top: item_y + 2.0,
+                    left: layout.content_x + layout.text_offset,
+                    top: item_y + 6.0,
                     bounds_left: layout.content_x,
                     bounds_top: item_y,
                     bounds_right: layout.content_x + layout.content_width,
@@ -265,16 +372,18 @@ impl GpuApp {
                     color: name_color,
                 });
 
-                // Project path
-                let path_text = format!(
-                    "  {}",
-                    WelcomeScreen::project_display_path(project)
+                // Project path — smaller font
+                let path_text = WelcomeScreen::project_display_path(project);
+                let path_buf = text_r.create_buffer_with_size(
+                    &path_text,
+                    layout.content_width - layout.text_offset,
+                    PROJECT_PATH_FONT_SIZE,
+                    PROJECT_PATH_LINE_HEIGHT,
                 );
-                let path_buf = text_r.create_buffer(&path_text, layout.content_width);
                 text_areas.push(PreparedTextArea {
                     buffer: path_buf,
-                    left: layout.content_x,
-                    top: item_y + line_h + 2.0,
+                    left: layout.content_x + layout.text_offset,
+                    top: item_y + 6.0 + PROJECT_NAME_LINE_HEIGHT + 2.0,
                     bounds_left: layout.content_x,
                     bounds_top: item_y,
                     bounds_right: layout.content_x + layout.content_width,
@@ -285,7 +394,12 @@ impl GpuApp {
         } else {
             // No recent projects message
             let msg = "No recent projects. Press 'o' to open a project.";
-            let msg_buf = text_r.create_buffer(msg, layout.content_width);
+            let msg_buf = text_r.create_buffer_with_size(
+                msg,
+                layout.content_width,
+                SUBTITLE_FONT_SIZE,
+                SUBTITLE_LINE_HEIGHT,
+            );
             text_areas.push(PreparedTextArea {
                 buffer: msg_buf,
                 left: layout.content_x,
@@ -298,19 +412,25 @@ impl GpuApp {
             });
         }
 
-        // Help text at bottom
-        let help = "j/k: navigate  Enter: open  o: open folder  d: remove  q: quit";
-        let help_buf = text_r.create_buffer(help, width_f);
-        let help_w = help.len() as f32 * text_r.cell_width;
+        // Help text at bottom — small, subtle
+        let help = "j/k: navigate   Enter: open   o: open folder   d: remove   q: quit";
+        let help_cell_w = HELP_FONT_SIZE * 0.6;
+        let help_buf = text_r.create_buffer_with_size(
+            help,
+            width_f,
+            HELP_FONT_SIZE,
+            HELP_LINE_HEIGHT,
+        );
+        let help_w = help.len() as f32 * help_cell_w;
         text_areas.push(PreparedTextArea {
             buffer: help_buf,
             left: (width_f - help_w) / 2.0,
-            top: height_f - line_h - 8.0,
+            top: height_f - HELP_LINE_HEIGHT - 12.0,
             bounds_left: 0.0,
             bounds_top: 0.0,
             bounds_right: width_f,
             bounds_bottom: height_f,
-            color: to_glyphon_color(OVERLAY0),
+            color: to_glyphon_color(SURFACE1),
         });
 
         // ===== Draw =====
@@ -329,9 +449,9 @@ impl GpuApp {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: CRUST[0] as f64,
-                            g: CRUST[1] as f64,
-                            b: CRUST[2] as f64,
+                            r: MANTLE[0] as f64,
+                            g: MANTLE[1] as f64,
+                            b: MANTLE[2] as f64,
                             a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,
