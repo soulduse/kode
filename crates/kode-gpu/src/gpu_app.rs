@@ -4,6 +4,7 @@ use glyphon::Color;
 use kode_core::event::{KeyCode, Modifiers};
 use kode_keymap::mode::Mode;
 use kode_state::{AppState, create_app_view};
+use kode_state::file_explorer::InputMode;
 use kode_terminal::input::key_to_escape;
 use kode_workspace::pane::PaneContent;
 use winit::application::ApplicationHandler;
@@ -24,32 +25,140 @@ use crate::welcome_screen::{
     TITLE_LINE_HEIGHT,
 };
 
-// Catppuccin Mocha colors
-const BASE: [f32; 4] = [0.118, 0.118, 0.180, 1.0]; // #1e1e2e
-const MANTLE: [f32; 4] = [0.110, 0.110, 0.165, 1.0]; // #181825
-const CRUST: [f32; 4] = [0.067, 0.067, 0.125, 1.0]; // #11111b
-const SURFACE0: [f32; 4] = [0.192, 0.196, 0.267, 1.0]; // #313244
-const SURFACE1: [f32; 4] = [0.271, 0.278, 0.353, 1.0]; // #45475a
-const TEXT_COLOR: [f32; 4] = [0.804, 0.839, 0.957, 1.0]; // #cdd6f4
-const BLUE: [f32; 4] = [0.537, 0.706, 0.980, 1.0]; // #89b4fa
-const GREEN: [f32; 4] = [0.651, 0.890, 0.631, 1.0]; // #a6e3a1
-const YELLOW: [f32; 4] = [0.976, 0.886, 0.686, 1.0]; // #f9e2af
-const MAUVE: [f32; 4] = [0.796, 0.651, 0.969, 1.0]; // #cba6f7
-const OVERLAY0: [f32; 4] = [0.424, 0.439, 0.549, 1.0]; // #6c7086
+// Catppuccin Mocha colors — linearized for sRGB framebuffer
+// GPU applies linear→sRGB gamma, so we store pow(sRGB/255, 2.2) values.
+// This ensures the final screen output matches the intended hex colors.
+const fn srgb(r: u8, g: u8, b: u8) -> [f32; 4] {
+    // pow(x, 2.2) approximation via pow(x, 2) * pow(x, 0.2) ≈ x*x for dark values
+    // For accuracy we precompute: linear = (sRGB/255)^2.2
+    // Using x^2 as an approximation (close enough for dark theme colors)
+    let rf = (r as f32) / 255.0;
+    let gf = (g as f32) / 255.0;
+    let bf = (b as f32) / 255.0;
+    [rf * rf, gf * gf, bf * bf, 1.0]
+}
+
+const BASE: [f32; 4] = srgb(30, 30, 46);       // #1e1e2e
+const MANTLE: [f32; 4] = srgb(24, 24, 37);      // #181825
+const CRUST: [f32; 4] = srgb(17, 17, 27);       // #11111b
+const SURFACE0: [f32; 4] = srgb(49, 50, 68);    // #313244
+const SURFACE1: [f32; 4] = srgb(69, 71, 90);    // #45475a
+const TEXT_COLOR: [f32; 4] = srgb(205, 214, 244); // #cdd6f4
+const BLUE: [f32; 4] = srgb(137, 180, 250);     // #89b4fa
+const GREEN: [f32; 4] = srgb(166, 227, 161);    // #a6e3a1
+const YELLOW: [f32; 4] = srgb(249, 226, 175);   // #f9e2af
+const MAUVE: [f32; 4] = srgb(203, 166, 247);    // #cba6f7
+const RED: [f32; 4] = srgb(243, 139, 168);      // #f38ba8
+const OVERLAY0: [f32; 4] = srgb(108, 112, 134);  // #6c7086
+const OVERLAY1: [f32; 4] = srgb(127, 132, 156);  // #7f849c
+const SUBTEXT0: [f32; 4] = srgb(166, 173, 200);  // #a6adc8
+
+// Editor UI layout constants
+const TAB_BAR_HEIGHT: f32 = 38.0;
+const STATUS_BAR_HEIGHT: f32 = 28.0;
+const EDITOR_FONT_SIZE: f32 = 14.0;
+const EDITOR_LINE_HEIGHT: f32 = 22.0;
+const LINE_NUM_FONT_SIZE: f32 = 12.0;
+const LINE_NUM_LINE_HEIGHT: f32 = 22.0;
+const EXPLORER_FONT_SIZE: f32 = 13.0;
+const EXPLORER_LINE_HEIGHT: f32 = 26.0;
+const EXPLORER_HEADER_FONT_SIZE: f32 = 11.0;
+const EXPLORER_HEADER_LINE_HEIGHT: f32 = 16.0;
+const TAB_FONT_SIZE: f32 = 13.0;
+const TAB_LINE_HEIGHT: f32 = 18.0;
+const STATUS_FONT_SIZE: f32 = 12.0;
+const STATUS_LINE_HEIGHT: f32 = 16.0;
+const PANE_TITLE_FONT_SIZE: f32 = 12.0;
+const PANE_TITLE_LINE_HEIGHT: f32 = 16.0;
+const GUTTER_CHARS: f32 = 5.0;
+const GUTTER_PADDING: f32 = 12.0;
 
 fn to_glyphon_color(c: [f32; 4]) -> Color {
-    Color::rgba(
-        (c[0] * 255.0) as u8,
-        (c[1] * 255.0) as u8,
-        (c[2] * 255.0) as u8,
-        (c[3] * 255.0) as u8,
-    )
+    // Our color constants are in linear space (for sRGB framebuffer).
+    // glyphon expects sRGB values, so convert linear→sRGB: sqrt(x) ≈ pow(x, 1/2.2)
+    let to_srgb = |x: f32| -> u8 { (x.sqrt().clamp(0.0, 1.0) * 255.0) as u8 };
+    Color::rgba(to_srgb(c[0]), to_srgb(c[1]), to_srgb(c[2]), (c[3] * 255.0) as u8)
+}
+
+/// Basic line-level syntax coloring.
+fn syntax_line_color(line: &str) -> [f32; 4] {
+    let trimmed = line.trim();
+    // Comments
+    if trimmed.starts_with("//") || trimmed.starts_with('#') || trimmed.starts_with("/*") || trimmed.starts_with('*') {
+        return OVERLAY0;
+    }
+    // String-heavy lines
+    if trimmed.starts_with('"') || trimmed.starts_with('\'') || trimmed.starts_with("```") {
+        return GREEN;
+    }
+    // Import/use/include statements
+    if trimmed.starts_with("import ") || trimmed.starts_with("use ") || trimmed.starts_with("from ") || trimmed.starts_with("require") || trimmed.starts_with("include") {
+        return MAUVE;
+    }
+    // Annotations/decorators
+    if trimmed.starts_with('@') {
+        return YELLOW;
+    }
+    // Keywords at start of line
+    let keywords = ["fun ", "fn ", "func ", "def ", "class ", "struct ", "enum ", "interface ", "trait ",
+        "pub ", "private ", "protected ", "internal ", "open ", "abstract ", "override ",
+        "val ", "var ", "let ", "const ", "static ", "return ", "if ", "else ", "for ", "while ",
+        "match ", "when ", "switch ", "case ", "package ", "module "];
+    for kw in &keywords {
+        if trimmed.starts_with(kw) {
+            return BLUE;
+        }
+    }
+    TEXT_COLOR
+}
+
+/// File extension to icon mapping for explorer.
+fn file_icon(name: &str, is_dir: bool, expanded: bool) -> &'static str {
+    if is_dir {
+        return if expanded { "📂" } else { "📁" };
+    }
+    match name.rsplit('.').next().unwrap_or("") {
+        "kt" | "kts" => "🇰",
+        "java" => "☕",
+        "rs" => "🦀",
+        "py" => "🐍",
+        "js" => "📜",
+        "ts" | "tsx" => "🔷",
+        "json" => "{ }",
+        "xml" => "📋",
+        "md" => "📝",
+        "yml" | "yaml" => "⚙️",
+        "toml" => "⚙️",
+        "gradle" | "groovy" => "🐘",
+        "sh" | "bash" | "zsh" => "🐚",
+        "sql" => "🗃️",
+        "html" | "htm" => "🌐",
+        "css" | "scss" => "🎨",
+        "png" | "jpg" | "svg" | "gif" => "🖼️",
+        "lock" => "🔒",
+        "properties" => "🔧",
+        _ => "📄",
+    }
 }
 
 /// The two screens of the application.
 pub enum AppScreen {
     Welcome(WelcomeScreen),
     Editor(AppState),
+}
+
+/// In-file search state.
+struct SearchState {
+    active: bool,
+    query: String,
+    matches: Vec<(usize, usize, usize)>, // (line, start_col, end_col)
+    current_match: usize,
+}
+
+impl SearchState {
+    fn new() -> Self {
+        Self { active: false, query: String::new(), matches: Vec::new(), current_match: 0 }
+    }
 }
 
 /// GPU application state implementing winit's ApplicationHandler.
@@ -63,6 +172,9 @@ pub struct GpuApp {
     scale_factor: f64,
     cursor_pos: (f64, f64),
     should_quit: bool,
+    search: SearchState,
+    ime_composing: bool,
+    ime_preedit: String,
 }
 
 impl GpuApp {
@@ -77,6 +189,9 @@ impl GpuApp {
             scale_factor: 1.0,
             cursor_pos: (0.0, 0.0),
             should_quit: false,
+            ime_composing: false,
+            ime_preedit: String::new(),
+            search: SearchState::new(),
         }
     }
 
@@ -138,25 +253,13 @@ impl GpuApp {
         // ===== Background accent: subtle gradient-like panel behind content =====
         let panel_top = layout.title_y - 20.0;
         let panel_bottom = layout.button_y + layout.button_h + 20.0;
-        rects.push(RectInstance {
-            pos: [layout.content_x - 40.0, panel_top],
-            size: [layout.content_width + 80.0, panel_bottom - panel_top],
-            color: [BASE[0], BASE[1], BASE[2], 0.4],
-        });
+        rects.push(RectInstance::flat([layout.content_x - 40.0, panel_top], [layout.content_width + 80.0, panel_bottom - panel_top], [BASE[0], BASE[1], BASE[2], 0.4]));
 
         // ===== "Open Project" button — BLUE background, more prominent =====
-        rects.push(RectInstance {
-            pos: [layout.button_x, layout.button_y],
-            size: [layout.button_w, layout.button_h],
-            color: BLUE,
-        });
+        rects.push(RectInstance::flat([layout.button_x, layout.button_y], [layout.button_w, layout.button_h], BLUE));
 
         // Divider line
-        rects.push(RectInstance {
-            pos: [layout.content_x, layout.divider_y],
-            size: [layout.content_width, 1.0],
-            color: SURFACE1,
-        });
+        rects.push(RectInstance::flat([layout.content_x, layout.divider_y], [layout.content_width, 1.0], SURFACE1));
 
         // Selected project highlight — rounded feel via slightly inset
         let project_count = ws.recent.projects.len();
@@ -164,17 +267,9 @@ impl GpuApp {
             let vis_idx = ws.selected.saturating_sub(ws.scroll_offset);
             let sel_y = layout.list_start_y + vis_idx as f32 * layout.list_item_height;
             if sel_y + layout.list_item_height <= layout.max_bottom {
-                rects.push(RectInstance {
-                    pos: [layout.content_x - 12.0, sel_y],
-                    size: [layout.content_width + 24.0, layout.list_item_height],
-                    color: SURFACE0,
-                });
+                rects.push(RectInstance::flat([layout.content_x - 12.0, sel_y], [layout.content_width + 24.0, layout.list_item_height], SURFACE0));
                 // Left accent bar for selected item
-                rects.push(RectInstance {
-                    pos: [layout.content_x - 12.0, sel_y + 4.0],
-                    size: [3.0, layout.list_item_height - 8.0],
-                    color: BLUE,
-                });
+                rects.push(RectInstance::flat([layout.content_x - 12.0, sel_y + 4.0], [3.0, layout.list_item_height - 8.0], BLUE));
             }
         }
 
@@ -185,11 +280,7 @@ impl GpuApp {
                 let hover_y =
                     layout.list_start_y + hover_vis as f32 * layout.list_item_height;
                 if hover_y + layout.list_item_height <= layout.max_bottom {
-                    rects.push(RectInstance {
-                        pos: [layout.content_x - 12.0, hover_y],
-                        size: [layout.content_width + 24.0, layout.list_item_height],
-                        color: [SURFACE0[0], SURFACE0[1], SURFACE0[2], 0.4],
-                    });
+                    rects.push(RectInstance::flat([layout.content_x - 12.0, hover_y], [layout.content_width + 24.0, layout.list_item_height], [SURFACE0[0], SURFACE0[1], SURFACE0[2], 0.4]));
                 }
             }
         }
@@ -216,11 +307,7 @@ impl GpuApp {
                 let circle_x = layout.initial_x;
                 let circle_y = item_y + (layout.list_item_height - circle_size) / 2.0;
                 let color_idx = i % initial_colors.len();
-                rects.push(RectInstance {
-                    pos: [circle_x, circle_y],
-                    size: [circle_size, circle_size],
-                    color: initial_colors[color_idx],
-                });
+                rects.push(RectInstance::flat([circle_x, circle_y], [circle_size, circle_size], initial_colors[color_idx]));
             }
         }
 
@@ -525,28 +612,76 @@ impl GpuApp {
 
         let app_view = create_app_view(state);
         let text_r = self.text_renderer.as_mut().unwrap();
-        let line_h = text_r.line_height;
-        let cell_w = text_r.cell_width;
+        let ed_line_h = EDITOR_LINE_HEIGHT;
+        let ed_cell_w = EDITOR_FONT_SIZE * 0.6; // monospace ratio
+        let gutter_w = ed_cell_w * GUTTER_CHARS + GUTTER_PADDING;
 
         // ===== Collect rectangles =====
         let mut rects = Vec::new();
 
         // Tab bar background
-        rects.push(RectInstance {
-            pos: [0.0, 0.0],
-            size: [width_f, line_h + 4.0],
-            color: MANTLE,
-        });
+        rects.push(RectInstance::flat([0.0, 0.0], [width_f, TAB_BAR_HEIGHT], MANTLE));
+
+        // Build document tabs — collect all open documents with file paths
+        let active_doc_id = state.active_doc_id();
+        let mut doc_tabs: Vec<(usize, String)> = app_view
+            .documents
+            .iter()
+            .map(|(&doc_id, doc)| {
+                let name = doc
+                    .file_path
+                    .as_ref()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "untitled".to_string());
+                (doc_id, name)
+            })
+            .collect();
+        doc_tabs.sort_by_key(|(id, _)| *id);
+
+        let tab_cell_w = TAB_FONT_SIZE * 0.6;
+        let tab_padding = 24.0; // padding inside each tab
+        let tab_gap = 2.0;
+        let mut tab_x = 8.0;
+        let mut tab_positions: Vec<(usize, f32, f32, String, bool)> = Vec::new(); // (doc_id, x, w, name, is_active)
+
+        for (doc_id, name) in &doc_tabs {
+            let text_w = (name.len() as f32 + 3.0) * tab_cell_w + tab_padding;
+            let is_active = active_doc_id == Some(*doc_id);
+            tab_positions.push((*doc_id, tab_x, text_w, name.clone(), is_active));
+
+            if is_active {
+                // Active tab background
+                rects.push(RectInstance::rounded(
+                    [tab_x, 6.0],
+                    [text_w, TAB_BAR_HEIGHT - 6.0],
+                    BASE,
+                    [6.0, 6.0, 0.0, 0.0][0], // top corners only via visual trick
+                ));
+                // Blue indicator bar under active tab
+                rects.push(RectInstance::flat(
+                    [tab_x + 6.0, TAB_BAR_HEIGHT - 2.0],
+                    [text_w - 12.0, 2.0],
+                    BLUE,
+                ));
+            } else {
+                // Inactive tab — subtle background on hover
+                rects.push(RectInstance::rounded(
+                    [tab_x, 6.0],
+                    [text_w, TAB_BAR_HEIGHT - 6.0],
+                    CRUST,
+                    6.0,
+                ));
+            }
+
+            tab_x += text_w + tab_gap;
+        }
 
         // Status bar background
-        let status_y = height_f - line_h - 4.0;
-        rects.push(RectInstance {
-            pos: [0.0, status_y],
-            size: [width_f, line_h + 4.0],
-            color: MANTLE,
-        });
+        let status_y = height_f - STATUS_BAR_HEIGHT;
+        rects.push(RectInstance::flat([0.0, status_y], [width_f, STATUS_BAR_HEIGHT], MANTLE));
 
-        // Mode indicator in status bar
+        // Mode indicator — rounded pill
         let mode_name = app_view.mode.display_name();
         let mode_color = match app_view.mode {
             Mode::Normal => BLUE,
@@ -555,82 +690,146 @@ impl GpuApp {
             Mode::Command => YELLOW,
             _ => SURFACE1,
         };
-        rects.push(RectInstance {
-            pos: [0.0, status_y],
-            size: [mode_name.len() as f32 * cell_w + 16.0, line_h + 4.0],
-            color: mode_color,
-        });
+        let mode_cell_w = STATUS_FONT_SIZE * 0.6;
+        let mode_text_w = (mode_name.len() + 2) as f32 * mode_cell_w;
+        rects.push(RectInstance::rounded(
+            [6.0, status_y + 5.0],
+            [mode_text_w + 8.0, STATUS_BAR_HEIGHT - 10.0],
+            mode_color,
+            4.0,
+        ));
+
+        // Search bar
+        let search_bar_h = if self.search.active { 34.0 } else { 0.0 };
+        if self.search.active {
+            rects.push(RectInstance::flat(
+                [0.0, TAB_BAR_HEIGHT],
+                [width_f, search_bar_h],
+                SURFACE0,
+            ));
+        }
 
         // Pane backgrounds and borders
+        let content_top = TAB_BAR_HEIGHT + search_bar_h;
+        let content_bottom = status_y;
+        let content_height = content_bottom - content_top;
+
         for (pane_id, kode_rect) in &app_view.pane_rects {
             let px = kode_rect.x();
-            let py = kode_rect.y() + line_h + 4.0;
+            let py = kode_rect.y() + content_top;
             let pw = kode_rect.width();
-            let ph = kode_rect.height().min(height_f - line_h * 2.0 - 8.0);
+            let ph = kode_rect.height().min(content_height);
 
-            rects.push(RectInstance {
-                pos: [px, py],
-                size: [pw, ph],
-                color: BASE,
-            });
+            // Pane background
+            rects.push(RectInstance::flat([px, py], [pw, ph], BASE));
 
-            rects.push(RectInstance {
-                pos: [px, py],
-                size: [pw, 1.0],
-                color: SURFACE0,
-            });
-
+            // Pane separator (vertical)
             if px > 0.0 {
-                rects.push(RectInstance {
-                    pos: [px, py],
-                    size: [1.0, ph],
-                    color: SURFACE0,
-                });
+                rects.push(RectInstance::flat([px - 1.0, py], [2.0, ph], CRUST));
             }
 
             if let Some(pane) = app_view.panes.get(pane_id) {
+                // Active pane accent bar
+                if pane.focused && px > 0.0 {
+                    rects.push(RectInstance::flat([px, py + 4.0], [2.0, ph - 8.0], BLUE));
+                }
+
                 match pane.content {
                     PaneContent::Editor(doc_id) => {
-                        let gutter_w = cell_w * 4.0;
-                        rects.push(RectInstance {
-                            pos: [px, py + 1.0],
-                            size: [gutter_w, ph - 1.0],
-                            color: MANTLE,
-                        });
+                        // Gutter background
+                        rects.push(RectInstance::flat(
+                            [px, py],
+                            [gutter_w, ph],
+                            MANTLE,
+                        ));
+                        // Gutter/code separator
+                        rects.push(RectInstance::flat(
+                            [px + gutter_w - 1.0, py],
+                            [1.0, ph],
+                            SURFACE0,
+                        ));
 
                         if let Some(doc) = app_view.documents.get(&doc_id) {
+                            let scroll = doc.scroll_offset();
                             let cursor_line = doc.cursors.primary().line();
-                            let cursor_y = py + 1.0 + (cursor_line as f32) * line_h;
-                            if cursor_y < py + ph {
-                                rects.push(RectInstance {
-                                    pos: [px + gutter_w, cursor_y],
-                                    size: [pw - gutter_w, line_h],
-                                    color: SURFACE0,
-                                });
+                            // Only render cursor if visible
+                            if cursor_line >= scroll {
+                                let visible_line = cursor_line - scroll;
+                                let cursor_y = py + 4.0 + (visible_line as f32) * ed_line_h;
+                                if cursor_y + ed_line_h < py + ph {
+                                    // Active line highlight — rounded
+                                    rects.push(RectInstance::rounded(
+                                        [px + gutter_w + 2.0, cursor_y],
+                                        [pw - gutter_w - 4.0, ed_line_h],
+                                        SURFACE0,
+                                        3.0,
+                                    ));
 
-                                let cursor_col = doc.cursors.primary().col();
-                                rects.push(RectInstance {
-                                    pos: [
-                                        px + gutter_w + 4.0 + cursor_col as f32 * cell_w,
-                                        cursor_y,
-                                    ],
-                                    size: [cell_w, line_h],
-                                    color: TEXT_COLOR,
-                                });
+                                    // Cursor bar (thin I-beam style)
+                                    let cursor_col = doc.cursors.primary().col();
+                                    rects.push(RectInstance::rounded(
+                                        [
+                                            px + gutter_w + 8.0 + cursor_col as f32 * ed_cell_w,
+                                            cursor_y + 1.0,
+                                        ],
+                                        [2.0, ed_line_h - 2.0],
+                                        TEXT_COLOR,
+                                        1.0,
+                                    ));
+                                }
+                            }
+
+                            // Search match highlights
+                            if self.search.active && !self.search.matches.is_empty() {
+                                let scroll = doc.scroll_offset();
+                                let visible_lines = ((ph - 8.0) / ed_line_h) as usize;
+                                let end_line = scroll + visible_lines;
+                                // Semi-transparent yellow for matches
+                                let match_color = [YELLOW[0], YELLOW[1], YELLOW[2], 0.3];
+                                let current_color = [YELLOW[0], YELLOW[1], YELLOW[2], 0.6];
+                                for (idx, &(line, start_col, end_col)) in self.search.matches.iter().enumerate() {
+                                    if line >= scroll && line < end_line {
+                                        let vis_line = line - scroll;
+                                        let hy = py + 4.0 + vis_line as f32 * ed_line_h;
+                                        let hx = px + gutter_w + 8.0 + start_col as f32 * ed_cell_w;
+                                        let hw = (end_col - start_col) as f32 * ed_cell_w;
+                                        let color = if idx == self.search.current_match { current_color } else { match_color };
+                                        rects.push(RectInstance::rounded([hx, hy], [hw.max(2.0), ed_line_h], color, 2.0));
+                                    }
+                                }
                             }
                         }
                     }
                     PaneContent::FileExplorer(explorer_id) => {
+                        // Explorer header background
+                        rects.push(RectInstance::flat(
+                            [px, py],
+                            [pw, EXPLORER_HEADER_LINE_HEIGHT + 12.0],
+                            MANTLE,
+                        ));
+
                         if let Some(explorer) = app_view.explorers.get(&explorer_id) {
+                            let header_h = EXPLORER_HEADER_LINE_HEIGHT + 12.0;
                             let visible_idx =
                                 explorer.cursor.saturating_sub(explorer.scroll_offset);
-                            let cursor_y = py + 1.0 + visible_idx as f32 * line_h;
-                            if cursor_y < py + ph && pane.focused {
-                                rects.push(RectInstance {
-                                    pos: [px, cursor_y],
-                                    size: [pw, line_h],
-                                    color: SURFACE0,
-                                });
+                            let cursor_y =
+                                py + header_h + 4.0 + visible_idx as f32 * EXPLORER_LINE_HEIGHT;
+                            if cursor_y + EXPLORER_LINE_HEIGHT < py + ph {
+                                // Selected item highlight — always visible
+                                let sel_bg = if pane.focused { SURFACE1 } else { SURFACE0 };
+                                rects.push(RectInstance::rounded(
+                                    [px + 4.0, cursor_y],
+                                    [pw - 8.0, EXPLORER_LINE_HEIGHT],
+                                    sel_bg,
+                                    4.0,
+                                ));
+                                // Blue accent bar (left edge)
+                                rects.push(RectInstance::rounded(
+                                    [px + 4.0, cursor_y + 3.0],
+                                    [3.0, EXPLORER_LINE_HEIGHT - 6.0],
+                                    BLUE,
+                                    1.5,
+                                ));
                             }
                         }
                     }
@@ -676,26 +875,78 @@ impl GpuApp {
         // ===== Collect and draw text =====
         let mut text_areas: Vec<PreparedTextArea> = Vec::new();
 
-        let tab = app_view.session.active_tab();
-        let tab_text = format!("  {}  ", tab.name);
-        let tab_buf = text_r.create_buffer(&tab_text, width_f);
-        text_areas.push(PreparedTextArea {
-            buffer: tab_buf,
-            left: 4.0,
-            top: 2.0,
-            bounds_left: 0.0,
-            bounds_top: 0.0,
-            bounds_right: width_f,
-            bounds_bottom: line_h + 4.0,
-            color: to_glyphon_color(TEXT_COLOR),
-        });
+        // Tab texts — render all document tabs
+        let close_btn_w = 20.0;
+        for (_doc_id, tx, tw, name, is_active) in &tab_positions {
+            let tab_label = format!("  {}  ", name);
+            let tab_buf = text_r.create_buffer_with_size(
+                &tab_label, tw - close_btn_w, TAB_FONT_SIZE, TAB_LINE_HEIGHT,
+            );
+            let color = if *is_active {
+                to_glyphon_color(TEXT_COLOR)
+            } else {
+                to_glyphon_color(OVERLAY0)
+            };
+            text_areas.push(PreparedTextArea {
+                buffer: tab_buf,
+                left: *tx + 4.0,
+                top: (TAB_BAR_HEIGHT - TAB_LINE_HEIGHT) / 2.0 + 2.0,
+                bounds_left: *tx,
+                bounds_top: 0.0,
+                bounds_right: tx + tw - close_btn_w,
+                bounds_bottom: TAB_BAR_HEIGHT,
+                color,
+            });
 
-        let status_text = format!(" {} ", mode_name.to_uppercase());
-        let status_buf = text_r.create_buffer(&status_text, width_f);
+            // Close button "×"
+            let close_buf = text_r.create_buffer_with_size(
+                "×", close_btn_w, TAB_FONT_SIZE, TAB_LINE_HEIGHT,
+            );
+            text_areas.push(PreparedTextArea {
+                buffer: close_buf,
+                left: tx + tw - close_btn_w + 2.0,
+                top: (TAB_BAR_HEIGHT - TAB_LINE_HEIGHT) / 2.0 + 2.0,
+                bounds_left: tx + tw - close_btn_w,
+                bounds_top: 0.0,
+                bounds_right: tx + tw,
+                bounds_bottom: TAB_BAR_HEIGHT,
+                color: to_glyphon_color(OVERLAY1),
+            });
+        }
+
+        // Search bar text
+        if self.search.active {
+            let search_label = format!(" 🔍 {}_ ", self.search.query);
+            let match_info = if self.search.matches.is_empty() {
+                if self.search.query.is_empty() { String::new() } else { "No results".to_string() }
+            } else {
+                format!("{} of {}", self.search.current_match + 1, self.search.matches.len())
+            };
+            let search_text = format!("{}  {}", search_label, match_info);
+            let search_buf = text_r.create_buffer_with_size(
+                &search_text, width_f, 13.0, 18.0,
+            );
+            text_areas.push(PreparedTextArea {
+                buffer: search_buf,
+                left: 12.0,
+                top: TAB_BAR_HEIGHT + 8.0,
+                bounds_left: 0.0,
+                bounds_top: TAB_BAR_HEIGHT,
+                bounds_right: width_f,
+                bounds_bottom: TAB_BAR_HEIGHT + search_bar_h,
+                color: to_glyphon_color(TEXT_COLOR),
+            });
+        }
+
+        // Status bar: mode text
+        let status_mode = format!(" {} ", mode_name.to_uppercase());
+        let status_mode_buf = text_r.create_buffer_with_size(
+            &status_mode, width_f, STATUS_FONT_SIZE, STATUS_LINE_HEIGHT,
+        );
         text_areas.push(PreparedTextArea {
-            buffer: status_buf,
-            left: 4.0,
-            top: status_y + 2.0,
+            buffer: status_mode_buf,
+            left: 10.0,
+            top: status_y + (STATUS_BAR_HEIGHT - STATUS_LINE_HEIGHT) / 2.0,
             bounds_left: 0.0,
             bounds_top: status_y,
             bounds_right: width_f,
@@ -703,44 +954,68 @@ impl GpuApp {
             color: to_glyphon_color(CRUST),
         });
 
+        // Status bar: file info (right-aligned)
+        // Get info from focused pane
+        let mut status_right = String::new();
+        if let Some(pane) = app_view.panes.get(&state.focused_pane) {
+            if let PaneContent::Editor(doc_id) = pane.content {
+                if let Some(doc) = app_view.documents.get(&doc_id) {
+                    let ln = doc.cursors.primary().line() + 1;
+                    let col = doc.cursors.primary().col() + 1;
+                    let title = doc.title();
+                    status_right = format!("{}  Ln {}, Col {}  ", title, ln, col);
+                }
+            }
+        }
+        if !status_right.is_empty() {
+            let sr_cell_w = STATUS_FONT_SIZE * 0.6;
+            let sr_w = status_right.len() as f32 * sr_cell_w;
+            let sr_buf = text_r.create_buffer_with_size(
+                &status_right, width_f, STATUS_FONT_SIZE, STATUS_LINE_HEIGHT,
+            );
+            text_areas.push(PreparedTextArea {
+                buffer: sr_buf,
+                left: width_f - sr_w - 8.0,
+                top: status_y + (STATUS_BAR_HEIGHT - STATUS_LINE_HEIGHT) / 2.0,
+                bounds_left: 0.0,
+                bounds_top: status_y,
+                bounds_right: width_f,
+                bounds_bottom: height_f,
+                color: to_glyphon_color(OVERLAY0),
+            });
+        }
+
+        // Pane content text
         for (pane_id, kode_rect) in &app_view.pane_rects {
             let px = kode_rect.x();
-            let py = kode_rect.y() + line_h + 4.0;
+            let py = kode_rect.y() + content_top;
             let pw = kode_rect.width();
-            let ph = kode_rect.height().min(height_f - line_h * 2.0 - 8.0);
+            let ph = kode_rect.height().min(content_height);
 
             if let Some(pane) = app_view.panes.get(pane_id) {
                 match pane.content {
                     PaneContent::Editor(doc_id) => {
                         if let Some(doc) = app_view.documents.get(&doc_id) {
-                            let gutter_w = cell_w * 4.0;
-                            let visible_lines = (ph / line_h) as usize;
+                            let visible_lines = ((ph - 8.0) / ed_line_h) as usize;
+                            let scroll = doc.scroll_offset();
+                            let line_count = doc.buffer.line_count();
+                            let end = (scroll + visible_lines).min(line_count);
 
-                            let title = doc.title();
-                            let title_buf =
-                                text_r.create_buffer(&format!(" {} ", title), pw);
-                            text_areas.push(PreparedTextArea {
-                                buffer: title_buf,
-                                left: px + gutter_w,
-                                top: py - line_h + 2.0,
-                                bounds_left: px,
-                                bounds_top: py - line_h,
-                                bounds_right: px + pw,
-                                bounds_bottom: py,
-                                color: to_glyphon_color(OVERLAY0),
-                            });
-
-                            for i in 0..visible_lines.min(doc.buffer.line_count()) {
-                                let line_y = py + 1.0 + i as f32 * line_h;
-                                if line_y + line_h > py + ph {
+                            for i in scroll..end {
+                                let visual_idx = i - scroll;
+                                let line_y = py + 4.0 + visual_idx as f32 * ed_line_h;
+                                if line_y + ed_line_h > py + ph {
                                     break;
                                 }
 
-                                let line_num = format!("{:>3} ", i + 1);
-                                let gutter_buf = text_r.create_buffer(&line_num, gutter_w);
+                                // Line number — smaller, right-aligned
+                                let line_num = format!("{:>4} ", i + 1);
+                                let gutter_buf = text_r.create_buffer_with_size(
+                                    &line_num, gutter_w, LINE_NUM_FONT_SIZE, LINE_NUM_LINE_HEIGHT,
+                                );
                                 text_areas.push(PreparedTextArea {
                                     buffer: gutter_buf,
-                                    left: px + 2.0,
+                                    left: px + 4.0,
                                     top: line_y,
                                     bounds_left: px,
                                     bounds_top: py,
@@ -749,21 +1024,51 @@ impl GpuApp {
                                     color: to_glyphon_color(OVERLAY0),
                                 });
 
+                                // Code line (no word wrap, with basic syntax coloring)
                                 let line_text =
                                     doc.buffer.line_to_string(i).unwrap_or_default();
                                 if !line_text.is_empty() {
                                     let trimmed = line_text.trim_end_matches('\n');
-                                    let code_buf = text_r
-                                        .create_buffer(trimmed, pw - gutter_w - 8.0);
+                                    let line_color = syntax_line_color(trimmed);
+                                    let code_buf = text_r.create_buffer_no_wrap(
+                                        trimmed,
+                                        EDITOR_FONT_SIZE,
+                                        EDITOR_LINE_HEIGHT,
+                                    );
                                     text_areas.push(PreparedTextArea {
                                         buffer: code_buf,
-                                        left: px + gutter_w + 4.0,
+                                        left: px + gutter_w + 8.0,
                                         top: line_y,
                                         bounds_left: px + gutter_w,
                                         bounds_top: py,
                                         bounds_right: px + pw,
                                         bounds_bottom: py + ph,
-                                        color: to_glyphon_color(TEXT_COLOR),
+                                        color: to_glyphon_color(line_color),
+                                    });
+                                }
+                            }
+
+                            // IME preedit text overlay at cursor position
+                            if !self.ime_preedit.is_empty() {
+                                let cursor_line = doc.cursors.primary().line();
+                                let cursor_col = doc.cursors.primary().col();
+                                let scroll = doc.scroll_offset();
+                                if cursor_line >= scroll {
+                                    let visual_line = cursor_line - scroll;
+                                    let cursor_y = py + 4.0 + visual_line as f32 * ed_line_h;
+                                    let cursor_px = cursor_col as f32 * ed_cell_w;
+                                    let preedit_buf = text_r.create_buffer_no_wrap(
+                                        &self.ime_preedit, EDITOR_FONT_SIZE, EDITOR_LINE_HEIGHT,
+                                    );
+                                    text_areas.push(PreparedTextArea {
+                                        buffer: preedit_buf,
+                                        left: px + gutter_w + 8.0 + cursor_px,
+                                        top: cursor_y,
+                                        bounds_left: px + gutter_w,
+                                        bounds_top: py,
+                                        bounds_right: px + pw,
+                                        bounds_bottom: py + ph,
+                                        color: to_glyphon_color(YELLOW),
                                     });
                                 }
                             }
@@ -771,19 +1076,30 @@ impl GpuApp {
                     }
                     PaneContent::FileExplorer(explorer_id) => {
                         if let Some(explorer) = app_view.explorers.get(&explorer_id) {
-                            let visible_lines = (ph / line_h) as usize;
+                            let header_h = EXPLORER_HEADER_LINE_HEIGHT + 12.0;
 
-                            let title_buf = text_r.create_buffer(" explorer ", pw);
+                            // Header: "EXPLORER"
+                            let header_buf = text_r.create_buffer_with_size(
+                                "EXPLORER",
+                                pw,
+                                EXPLORER_HEADER_FONT_SIZE,
+                                EXPLORER_HEADER_LINE_HEIGHT,
+                            );
                             text_areas.push(PreparedTextArea {
-                                buffer: title_buf,
-                                left: px + 4.0,
-                                top: py - line_h + 2.0,
+                                buffer: header_buf,
+                                left: px + 12.0,
+                                top: py + 6.0,
                                 bounds_left: px,
-                                bounds_top: py - line_h,
+                                bounds_top: py,
                                 bounds_right: px + pw,
-                                bounds_bottom: py,
+                                bounds_bottom: py + header_h,
                                 color: to_glyphon_color(OVERLAY0),
                             });
+
+                            let list_top = py + header_h + 4.0;
+                            let available_h = ph - header_h - 4.0;
+                            let visible_lines =
+                                (available_h / EXPLORER_LINE_HEIGHT) as usize;
 
                             for i in 0..visible_lines {
                                 let entry_idx = explorer.scroll_offset + i;
@@ -791,40 +1107,114 @@ impl GpuApp {
                                     break;
                                 }
                                 let entry = &explorer.entries[entry_idx];
-                                let entry_y = py + 1.0 + i as f32 * line_h;
-                                if entry_y + line_h > py + ph {
+                                let entry_y = list_top + i as f32 * EXPLORER_LINE_HEIGHT;
+                                if entry_y + EXPLORER_LINE_HEIGHT > py + ph {
                                     break;
                                 }
 
                                 let indent = "  ".repeat(entry.depth);
-                                let arrow = if entry.is_dir {
-                                    if entry.expanded {
-                                        "▾ "
-                                    } else {
-                                        "▸ "
-                                    }
-                                } else {
-                                    "  "
-                                };
+                                let icon = file_icon(&entry.name, entry.is_dir, entry.expanded);
                                 let display =
-                                    format!("{}{}{}", indent, arrow, entry.name);
+                                    format!("{}{} {}", indent, icon, entry.name);
                                 let color = if entry.is_dir {
                                     to_glyphon_color(BLUE)
                                 } else {
                                     to_glyphon_color(TEXT_COLOR)
                                 };
 
-                                let entry_buf =
-                                    text_r.create_buffer(&display, pw - 4.0);
+                                let entry_buf = text_r.create_buffer_with_size(
+                                    &display,
+                                    pw - 20.0,
+                                    EXPLORER_FONT_SIZE,
+                                    EXPLORER_LINE_HEIGHT,
+                                );
                                 text_areas.push(PreparedTextArea {
                                     buffer: entry_buf,
-                                    left: px + 4.0,
-                                    top: entry_y,
+                                    left: px + 12.0,
+                                    top: entry_y + 2.0,
                                     bounds_left: px,
-                                    bounds_top: py,
+                                    bounds_top: list_top,
                                     bounds_right: px + pw,
                                     bounds_bottom: py + ph,
                                     color,
+                                });
+                            }
+
+                            // Input mode UI (create/rename)
+                            if let Some(input_mode) = &explorer.input_mode {
+                                let label = match input_mode {
+                                    InputMode::Create { is_dir: true, .. } => "New dir: ",
+                                    InputMode::Create { is_dir: false, .. } => "New file: ",
+                                    InputMode::Rename { .. } => "Rename: ",
+                                };
+                                let input_y = py + ph - EXPLORER_LINE_HEIGHT - 8.0;
+                                // Background
+                                rects.push(RectInstance::flat(
+                                    [px, input_y],
+                                    [pw, EXPLORER_LINE_HEIGHT + 8.0],
+                                    SURFACE0,
+                                ));
+                                let input_text = format!("{}{}_", label, explorer.input_buffer);
+                                let input_buf = text_r.create_buffer_with_size(
+                                    &input_text, pw - 16.0, EXPLORER_FONT_SIZE, EXPLORER_LINE_HEIGHT,
+                                );
+                                text_areas.push(PreparedTextArea {
+                                    buffer: input_buf,
+                                    left: px + 8.0,
+                                    top: input_y + 4.0,
+                                    bounds_left: px,
+                                    bounds_top: input_y,
+                                    bounds_right: px + pw,
+                                    bounds_bottom: py + ph,
+                                    color: to_glyphon_color(TEXT_COLOR),
+                                });
+                            }
+
+                            // Confirm delete dialog
+                            if let Some(idx) = explorer.confirm_delete {
+                                let name = explorer.entries.get(idx)
+                                    .map(|e| e.name.as_str())
+                                    .unwrap_or("?");
+                                let confirm_y = py + ph - EXPLORER_LINE_HEIGHT * 2.0 - 8.0;
+                                // Red background
+                                rects.push(RectInstance::rounded(
+                                    [px + 4.0, confirm_y],
+                                    [pw - 8.0, EXPLORER_LINE_HEIGHT * 2.0 + 4.0],
+                                    RED,
+                                    4.0,
+                                ));
+                                let confirm_text = format!("Delete {}? (y/n)", name);
+                                let confirm_buf = text_r.create_buffer_with_size(
+                                    &confirm_text, pw - 24.0, EXPLORER_FONT_SIZE, EXPLORER_LINE_HEIGHT,
+                                );
+                                text_areas.push(PreparedTextArea {
+                                    buffer: confirm_buf,
+                                    left: px + 12.0,
+                                    top: confirm_y + 4.0,
+                                    bounds_left: px,
+                                    bounds_top: confirm_y,
+                                    bounds_right: px + pw,
+                                    bounds_bottom: py + ph,
+                                    color: to_glyphon_color(CRUST),
+                                });
+                            }
+
+                            // Keyboard shortcut hints at bottom
+                            if explorer.input_mode.is_none() && explorer.confirm_delete.is_none() {
+                                let hint = "a:new  A:dir  r:rename  d:delete";
+                                let hint_y = py + ph - 20.0;
+                                let hint_buf = text_r.create_buffer_with_size(
+                                    hint, pw - 16.0, 10.0, 14.0,
+                                );
+                                text_areas.push(PreparedTextArea {
+                                    buffer: hint_buf,
+                                    left: px + 8.0,
+                                    top: hint_y,
+                                    bounds_left: px,
+                                    bounds_top: hint_y,
+                                    bounds_right: px + pw,
+                                    bounds_bottom: py + ph,
+                                    color: to_glyphon_color(OVERLAY0),
                                 });
                             }
                         }
@@ -834,8 +1224,8 @@ impl GpuApp {
                             text_r.create_buffer("Terminal (GPU pending)", pw);
                         text_areas.push(PreparedTextArea {
                             buffer: term_buf,
-                            left: px + 8.0,
-                            top: py + 8.0,
+                            left: px + 12.0,
+                            top: py + 12.0,
                             bounds_left: px,
                             bounds_top: py,
                             bounds_right: px + pw,
@@ -862,11 +1252,97 @@ impl GpuApp {
         output.present();
     }
 
+    fn update_ime_cursor_area(&self) {
+        if let (Some(window), AppScreen::Editor(state)) = (&self.window, &self.screen) {
+            if let Some(pane) = state.panes.get(&state.focused_pane) {
+                if let PaneContent::Editor(doc_id) = pane.content {
+                    if let Some(doc) = state.documents.get(&doc_id) {
+                        let ed_cell_w = EDITOR_FONT_SIZE * 0.6;
+                        let gutter_w = ed_cell_w * GUTTER_CHARS + GUTTER_PADDING;
+                        let pane_rects = state.pane_rects();
+                        let content_top = TAB_BAR_HEIGHT
+                            + if self.search.active { 34.0 } else { 0.0 };
+
+                        if let Some((_, kode_rect)) = pane_rects.iter().find(|(id, _)| *id == state.focused_pane) {
+                            let px = kode_rect.x();
+                            let py = kode_rect.y() + content_top;
+                            let cursor_line = doc.cursors.primary().line();
+                            let cursor_col = doc.cursors.primary().col();
+                            let scroll = doc.scroll_offset();
+                            let visual_line = cursor_line.saturating_sub(scroll);
+
+                            let cursor_x = px + gutter_w + 8.0 + cursor_col as f32 * ed_cell_w;
+                            let cursor_y = py + 4.0 + visual_line as f32 * EDITOR_LINE_HEIGHT;
+
+                            window.set_ime_cursor_area(
+                                winit::dpi::LogicalPosition::new(cursor_x as f64, cursor_y as f64),
+                                winit::dpi::LogicalSize::new(ed_cell_w as f64, EDITOR_LINE_HEIGHT as f64),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // ─────────────────────────────────────────────
     //  Key Handling
     // ─────────────────────────────────────────────
 
     fn handle_key(&mut self, key: kode_core::event::KeyEvent) {
+        // Cmd+F → toggle search
+        if key.code == KeyCode::Char('f') && key.modifiers.contains(Modifiers::SUPER) {
+            if let AppScreen::Editor(_) = &self.screen {
+                self.search.active = !self.search.active;
+                if !self.search.active {
+                    self.search.query.clear();
+                    self.search.matches.clear();
+                }
+                return;
+            }
+        }
+
+        // Handle search input when active
+        if self.search.active {
+            if let AppScreen::Editor(state) = &mut self.screen {
+                match key.code {
+                    KeyCode::Escape => {
+                        self.search.active = false;
+                        self.search.query.clear();
+                        self.search.matches.clear();
+                    }
+                    KeyCode::Enter => {
+                        // Go to next match
+                        if !self.search.matches.is_empty() {
+                            self.search.current_match =
+                                (self.search.current_match + 1) % self.search.matches.len();
+                            let (line, col, _) = self.search.matches[self.search.current_match];
+                            if let Some(doc) = state.focused_editor_doc_mut() {
+                                doc.cursors.primary_mut().move_to(line, col);
+                            }
+                        }
+                    }
+                    KeyCode::Backspace => {
+                        self.search.query.pop();
+                        Self::update_search_matches(&self.search.query, state, &mut self.search.matches, &mut self.search.current_match);
+                    }
+                    KeyCode::Char(c) if key.modifiers == Modifiers::NONE || key.modifiers == Modifiers::SHIFT => {
+                        self.search.query.push(c);
+                        Self::update_search_matches(&self.search.query, state, &mut self.search.matches, &mut self.search.current_match);
+                        // Jump to first match
+                        if !self.search.matches.is_empty() {
+                            let (line, col, _) = self.search.matches[self.search.current_match];
+                            if let Some(doc) = state.focused_editor_doc_mut() {
+                                doc.cursors.primary_mut().move_to(line, col);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                return;
+            }
+        }
+
         match &mut self.screen {
             AppScreen::Welcome(ws) => {
                 let action = ws.handle_key(key);
@@ -874,6 +1350,38 @@ impl GpuApp {
             }
             AppScreen::Editor(state) => {
                 Self::handle_editor_key(state, key);
+            }
+        }
+    }
+
+    fn update_search_matches(
+        query: &str,
+        state: &AppState,
+        matches: &mut Vec<(usize, usize, usize)>,
+        current_match: &mut usize,
+    ) {
+        matches.clear();
+        *current_match = 0;
+        if query.is_empty() {
+            return;
+        }
+        let query_lower = query.to_lowercase();
+        if let Some(doc) = state.panes.get(&state.focused_pane).and_then(|p| {
+            match p.content {
+                PaneContent::Editor(doc_id) => state.documents.get(&doc_id),
+                _ => None,
+            }
+        }) {
+            for line_idx in 0..doc.buffer.line_count() {
+                if let Some(line_text) = doc.buffer.line_to_string(line_idx) {
+                    let line_lower = line_text.to_lowercase();
+                    let mut start = 0;
+                    while let Some(pos) = line_lower[start..].find(&query_lower) {
+                        let col = start + pos;
+                        matches.push((line_idx, col, col + query.len()));
+                        start = col + 1;
+                    }
+                }
             }
         }
     }
@@ -925,6 +1433,12 @@ impl GpuApp {
     }
 
     fn handle_editor_key(state: &mut AppState, key: kode_core::event::KeyEvent) {
+        // Cmd+S → save focused document
+        if key.code == KeyCode::Char('s') && key.modifiers.contains(Modifiers::SUPER) {
+            state.save_focused();
+            return;
+        }
+
         if let Some(pane) = state.panes.get(&state.focused_pane) {
             match pane.content {
                 PaneContent::Terminal(term_id) => {
@@ -955,6 +1469,7 @@ impl GpuApp {
             }
         }
         state.handle_key_event(key);
+        tracing::debug!("After handle_key_event, mode: {:?}", state.mode());
     }
 }
 
@@ -976,6 +1491,7 @@ impl ApplicationHandler for GpuApp {
             .with_inner_size(winit::dpi::LogicalSize::new(1200.0, 800.0));
 
         let window = Arc::new(event_loop.create_window(attrs).unwrap());
+        window.set_ime_allowed(true);
         self.scale_factor = window.scale_factor();
 
         let surface = pollster::block_on(GpuSurface::new(window.clone()));
@@ -1046,33 +1562,271 @@ impl ApplicationHandler for GpuApp {
                 button: MouseButton::Left,
                 ..
             } => {
-                if let AppScreen::Welcome(ws) = &mut self.screen {
-                    let surface = self.surface.as_ref();
-                    if let (Some(surface), Some(text_r)) =
-                        (surface, self.text_renderer.as_ref())
-                    {
-                        let (w, h) = surface.size;
-                        let layout = WelcomeLayout::compute(
-                            w as f32,
-                            h as f32,
-                            text_r.line_height,
-                        );
-                        let (cx, cy) = self.cursor_pos;
-                        let action = ws.handle_click(cx as f32, cy as f32, &layout);
-                        self.process_welcome_action(action);
-                        if let Some(window) = &self.window {
-                            window.request_redraw();
+                let (cx, cy) = self.cursor_pos;
+                match &mut self.screen {
+                    AppScreen::Welcome(ws) => {
+                        let surface = self.surface.as_ref();
+                        if let (Some(surface), Some(text_r)) =
+                            (surface, self.text_renderer.as_ref())
+                        {
+                            let (w, h) = surface.size;
+                            let layout = WelcomeLayout::compute(
+                                w as f32,
+                                h as f32,
+                                text_r.line_height,
+                            );
+                            let action = ws.handle_click(cx as f32, cy as f32, &layout);
+                            self.process_welcome_action(action);
                         }
+                    }
+                    AppScreen::Editor(state) => {
+                        let surface = self.surface.as_ref();
+                        if let Some(surface) = surface {
+                            let (w, _h) = surface.size;
+                            let click_x = cx as f32;
+                            let click_y = cy as f32;
+                            let search_h = if self.search.active { 34.0 } else { 0.0 };
+                            let content_top = TAB_BAR_HEIGHT + search_h;
+                            let status_y = _h as f32 - STATUS_BAR_HEIGHT;
+
+                            // Tab bar clicks — switch document
+                            if click_y < content_top {
+                                let tab_cell_w = TAB_FONT_SIZE * 0.6;
+                                let tab_padding = 24.0;
+                                let tab_gap = 2.0;
+                                let mut tx = 8.0f32;
+                                let mut doc_tabs: Vec<(usize, String)> = state
+                                    .documents
+                                    .iter()
+                                    .map(|(&doc_id, doc)| {
+                                        let name = doc
+                                            .file_path
+                                            .as_ref()
+                                            .and_then(|p| p.file_name())
+                                            .map(|n| n.to_string_lossy().to_string())
+                                            .unwrap_or_else(|| "untitled".to_string());
+                                        (doc_id, name)
+                                    })
+                                    .collect();
+                                doc_tabs.sort_by_key(|(id, _)| *id);
+
+                                for (doc_id, name) in &doc_tabs {
+                                    let tw =
+                                        (name.len() as f32 + 3.0) * tab_cell_w + tab_padding;
+                                    if click_x >= tx && click_x < tx + tw {
+                                        let close_btn_w = 20.0;
+                                        if click_x > tx + tw - close_btn_w {
+                                            // Close this tab
+                                            state.close_document(*doc_id);
+                                        } else {
+                                            // Switch to this document
+                                            if let Some((&pane_id, _)) =
+                                                state.panes.iter().find(|(_, p)| {
+                                                    matches!(p.content, PaneContent::Editor(_))
+                                                })
+                                            {
+                                                if let Some(pane) = state.panes.get_mut(&pane_id) {
+                                                    pane.content = PaneContent::Editor(*doc_id);
+                                                }
+                                                state.set_focus(pane_id);
+                                            }
+                                        }
+                                        break;
+                                    }
+                                    tx += tw + tab_gap;
+                                }
+                            }
+
+                            // Content area clicks
+                            if click_y > content_top && click_y < status_y {
+                                let pane_rects = state.pane_rects();
+                                for (pane_id, kode_rect) in &pane_rects {
+                                    let px = kode_rect.x();
+                                    let py = kode_rect.y() + content_top;
+                                    let pw = kode_rect.width();
+                                    let ph = kode_rect.height().min(status_y - content_top);
+
+                                    if click_x >= px
+                                        && click_x < px + pw
+                                        && click_y >= py
+                                        && click_y < py + ph
+                                    {
+                                        // Focus this pane
+                                        state.set_focus(*pane_id);
+
+                                        if let Some(pane) =
+                                            state.panes.get(pane_id).cloned()
+                                        {
+                                            match pane.content {
+                                                PaneContent::FileExplorer(explorer_id) => {
+                                                    let header_h =
+                                                        EXPLORER_HEADER_LINE_HEIGHT + 12.0;
+                                                    let rel_y = click_y - py - header_h - 4.0;
+                                                    if rel_y >= 0.0 {
+                                                        let clicked_idx = (rel_y
+                                                            / EXPLORER_LINE_HEIGHT)
+                                                            as usize;
+                                                        if let Some(explorer) =
+                                                            state.explorers.get_mut(&explorer_id)
+                                                        {
+                                                            let abs_idx = clicked_idx
+                                                                + explorer.scroll_offset;
+                                                            if abs_idx < explorer.entries.len() {
+                                                                explorer.cursor = abs_idx;
+                                                                let entry = explorer.entries
+                                                                    [abs_idx]
+                                                                    .clone();
+                                                                if entry.is_dir {
+                                                                    explorer.toggle_expand();
+                                                                } else {
+                                                                    let path = entry.path.clone();
+                                                                    state
+                                                                        .open_file_from_explorer(
+                                                                            path,
+                                                                        );
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                PaneContent::Editor(doc_id) => {
+                                                    let ed_cell_w = EDITOR_FONT_SIZE * 0.6;
+                                                    let gutter_w = ed_cell_w * GUTTER_CHARS
+                                                        + GUTTER_PADDING;
+                                                    let rel_x = click_x - px - gutter_w - 8.0;
+                                                    let rel_y = click_y - py - 4.0;
+                                                    if rel_x >= 0.0 && rel_y >= 0.0 {
+                                                        let scroll_off = state.documents.get(&doc_id)
+                                                            .map(|d| d.scroll_offset()).unwrap_or(0);
+                                                        let line =
+                                                            (rel_y / EDITOR_LINE_HEIGHT) as usize + scroll_off;
+                                                        let col =
+                                                            (rel_x / ed_cell_w) as usize;
+                                                        if let Some(doc) =
+                                                            state.documents.get_mut(&doc_id)
+                                                        {
+                                                            let max_line =
+                                                                doc.buffer.line_count()
+                                                                    .saturating_sub(1);
+                                                            let target_line = line.min(max_line);
+                                                            let line_len = doc
+                                                                .buffer
+                                                                .line_len(target_line);
+                                                            let target_col = col.min(line_len);
+                                                            doc.cursors.primary_mut().move_to(
+                                                                target_line,
+                                                                target_col,
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let lines = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, y) => {
+                        // Typically ±1.0 per notch, clamp to ±3
+                        (-y as i32).clamp(-3, 3)
+                    }
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                        // macOS trackpad: accumulate pixels, 1 line per ~40px
+                        let raw = -(pos.y / 40.0);
+                        if raw.abs() < 0.5 { 0 } else { raw as i32 }
+                    }
+                };
+                if lines != 0 {
+                    if let AppScreen::Editor(state) = &mut self.screen {
+                        let (cx, cy) = self.cursor_pos;
+                        let click_x = cx as f32;
+                        let click_y = cy as f32;
+                        let search_h = if self.search.active { 34.0 } else { 0.0 };
+                        let content_top = TAB_BAR_HEIGHT + search_h;
+                        let surface = self.surface.as_ref();
+                        if let Some(surface) = surface {
+                            let status_y = surface.size.1 as f32 - STATUS_BAR_HEIGHT;
+                            if click_y > content_top && click_y < status_y {
+                                let pane_rects = state.pane_rects();
+                                for (pane_id, kode_rect) in &pane_rects {
+                                    let px = kode_rect.x();
+                                    let py = kode_rect.y() + content_top;
+                                    let pw = kode_rect.width();
+                                    let ph = kode_rect.height().min(status_y - content_top);
+                                    if click_x >= px && click_x < px + pw
+                                        && click_y >= py && click_y < py + ph
+                                    {
+                                        if let Some(pane) = state.panes.get(pane_id) {
+                                            match pane.content {
+                                                PaneContent::Editor(doc_id) => {
+                                                    if let Some(doc) = state.documents.get_mut(&doc_id) {
+                                                        let max = doc.buffer.line_count().saturating_sub(1);
+                                                        let current = doc.scroll_offset() as i32;
+                                                        let new_offset = (current + lines).clamp(0, max as i32) as usize;
+                                                        doc.set_scroll_offset(new_offset);
+                                                    }
+                                                }
+                                                PaneContent::FileExplorer(explorer_id) => {
+                                                    if let Some(explorer) = state.explorers.get_mut(&explorer_id) {
+                                                        let max = explorer.entries.len().saturating_sub(1);
+                                                        let current = explorer.scroll_offset as i32;
+                                                        let new_offset = (current + lines).clamp(0, max as i32) as usize;
+                                                        explorer.scroll_offset = new_offset;
+                                                    }
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
                     }
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                // Skip character input events during IME composing to avoid duplicates
+                if self.ime_composing && event.state == winit::event::ElementState::Pressed {
+                    if let winit::keyboard::Key::Character(_) = &event.logical_key {
+                        // IME will handle this via Ime::Commit
+                        if let Some(window) = &self.window {
+                            window.request_redraw();
+                        }
+                        return;
+                    }
+                }
                 if let Some(key) = translate_winit_key(&event, &self.modifiers) {
                     self.handle_key(key);
 
                     if self.should_quit {
                         event_loop.exit();
                         return;
+                    }
+
+                    // Auto-scroll to keep cursor visible after key input
+                    if let AppScreen::Editor(state) = &mut self.screen {
+                        if let Some(surface) = self.surface.as_ref() {
+                            let status_y = surface.size.1 as f32 - STATUS_BAR_HEIGHT;
+                            let content_h = status_y - TAB_BAR_HEIGHT;
+                            let visible_lines = (content_h / EDITOR_LINE_HEIGHT) as usize;
+                            if let Some(doc) = state.focused_editor_doc_mut() {
+                                doc.ensure_cursor_visible(visible_lines);
+                            }
+                        }
                     }
 
                     if let AppScreen::Editor(state) = &self.screen {
@@ -1082,8 +1836,63 @@ impl ApplicationHandler for GpuApp {
                         }
                     }
 
+                    self.update_ime_cursor_area();
                     if let Some(window) = &self.window {
                         window.request_redraw();
+                    }
+                }
+            }
+            WindowEvent::Ime(ime_event) => {
+                match ime_event {
+                    winit::event::Ime::Enabled => {
+                        self.ime_composing = false;
+                    }
+                    winit::event::Ime::Disabled => {
+                        self.ime_composing = false;
+                    }
+                    winit::event::Ime::Commit(text) => {
+                        self.ime_composing = false;
+                        self.ime_preedit.clear();
+                        // IME committed text (e.g., composed Korean/Japanese/Chinese characters)
+                        if let AppScreen::Editor(state) = &mut self.screen {
+                            if self.search.active {
+                                self.search.query.push_str(&text);
+                                Self::update_search_matches(&self.search.query, state, &mut self.search.matches, &mut self.search.current_match);
+                                if !self.search.matches.is_empty() {
+                                    let (line, col, _) = self.search.matches[self.search.current_match];
+                                    if let Some(doc) = state.focused_editor_doc_mut() {
+                                        doc.cursors.primary_mut().move_to(line, col);
+                                    }
+                                }
+                            } else if state.mode() == Mode::Insert {
+                                if let Some(doc) = state.focused_editor_doc_mut() {
+                                    for ch in text.chars() {
+                                        doc.insert_char(ch);
+                                    }
+                                }
+                            }
+
+                            // Handle explorer input mode
+                            if let Some(pane) = state.panes.get(&state.focused_pane) {
+                                if let PaneContent::FileExplorer(explorer_id) = pane.content {
+                                    if let Some(explorer) = state.explorers.get_mut(&explorer_id) {
+                                        if explorer.input_mode.is_some() {
+                                            explorer.input_buffer.push_str(&text);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(window) = &self.window {
+                            window.request_redraw();
+                        }
+                    }
+                    winit::event::Ime::Preedit(text, _cursor) => {
+                        self.ime_composing = !text.is_empty();
+                        self.ime_preedit = text;
+                        if let Some(window) = &self.window {
+                            window.request_redraw();
+                        }
                     }
                 }
             }
