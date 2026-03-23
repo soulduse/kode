@@ -45,7 +45,7 @@ pub struct KeyParser {
 impl KeyParser {
     pub fn new() -> Self {
         Self {
-            mode: Mode::Normal,
+            mode: Mode::Insert,
             pending_operator: None,
             count: None,
             pending_keys: Vec::new(),
@@ -208,7 +208,7 @@ impl KeyParser {
                 self.mode = Mode::Normal;
                 ParseResult::Complete(Action::ChangeMode(Mode::Normal))
             }
-            KeyCode::Char(c) if key.modifiers == Modifiers::NONE || key.modifiers == Modifiers::SHIFT => {
+            KeyCode::Char(c) if !key.modifiers.contains(Modifiers::CTRL) && !key.modifiers.contains(Modifiers::SUPER) => {
                 ParseResult::Complete(Action::Command(Command::InsertChar(c)))
             }
             KeyCode::Enter => ParseResult::Complete(Action::Command(Command::InsertChar('\n'))),
@@ -340,6 +340,7 @@ mod tests {
     #[test]
     fn normal_mode_motion() {
         let mut parser = KeyParser::new();
+        parser.set_mode(Mode::Normal);
         match parser.parse(key('j')) {
             ParseResult::Complete(Action::Motion(Motion::Down)) => {}
             other => panic!("Expected Motion::Down, got {:?}", other),
@@ -359,6 +360,7 @@ mod tests {
     #[test]
     fn operator_motion() {
         let mut parser = KeyParser::new();
+        parser.set_mode(Mode::Normal);
         assert!(matches!(parser.parse(key('d')), ParseResult::Pending));
         match parser.parse(key('w')) {
             ParseResult::Complete(Action::OperatorMotion {
@@ -373,6 +375,7 @@ mod tests {
     #[test]
     fn count_prefix() {
         let mut parser = KeyParser::new();
+        parser.set_mode(Mode::Normal);
         assert!(matches!(parser.parse(key('3')), ParseResult::Pending));
         match parser.parse(key('j')) {
             ParseResult::Complete(Action::Motion(Motion::LineDown(3))) => {}

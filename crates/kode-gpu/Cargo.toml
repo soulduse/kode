@@ -18,3 +18,4 @@ wgpu = "24"
 winit = "0.30"
 pollster = "0.4"
 tracing = { workspace = true }
+unicode-width = "0.2"
