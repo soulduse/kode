@@ -132,6 +132,17 @@ impl Document {
         self.scroll_offset = offset;
     }
 
+    /// Adjust scroll_offset so the cursor is within the visible range.
+    pub fn ensure_cursor_visible(&mut self, visible_lines: usize) {
+        let cursor_line = self.cursors.primary().line();
+        if cursor_line < self.scroll_offset {
+            self.scroll_offset = cursor_line;
+        }
+        if visible_lines > 0 && cursor_line >= self.scroll_offset + visible_lines {
+            self.scroll_offset = cursor_line - visible_lines + 1;
+        }
+    }
+
     pub fn title(&self) -> String {
         self.file_path
             .as_ref()

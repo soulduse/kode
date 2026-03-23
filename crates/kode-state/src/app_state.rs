@@ -102,7 +102,8 @@ impl AppState {
             return;
         }
 
-        match self.key_parser.parse(key) {
+        let result = self.key_parser.parse(key);
+        match result {
             ParseResult::Complete(Action::Workspace(action)) => {
                 self.handle_workspace_action(action);
             }
@@ -296,7 +297,7 @@ impl AppState {
         }
     }
 
-    fn focused_editor_doc_mut(&mut self) -> Option<&mut Document> {
+    pub fn focused_editor_doc_mut(&mut self) -> Option<&mut Document> {
         let pane = self.panes.get(&self.focused_pane)?;
         match pane.content {
             PaneContent::Editor(doc_id) => self.documents.get_mut(&doc_id),
@@ -369,7 +370,7 @@ impl AppState {
         }
     }
 
-    fn set_focus(&mut self, pane_id: PaneId) {
+    pub fn set_focus(&mut self, pane_id: PaneId) {
         if let Some(old) = self.panes.get_mut(&self.focused_pane) { old.focused = false; }
         if let Some(new) = self.panes.get_mut(&pane_id) { new.focused = true; }
         self.focused_pane = pane_id;
@@ -423,24 +424,48 @@ impl AppState {
     }
 
     /// Open a file from the explorer in the nearest editor pane.
+    /// If the file is already open, switch to it. Otherwise open as a new document.
     pub fn open_file_from_explorer(&mut self, path: std::path::PathBuf) {
-        let editor_pane = self.panes.iter().find(|(_, p)| {
-            matches!(p.content, PaneContent::Editor(_))
-        }).map(|(&id, p)| (id, match p.content { PaneContent::Editor(did) => did, _ => 0 }));
+        // Check if file is already open in some document
+        let existing_doc = self.documents.iter().find(|(_, doc)| {
+            doc.file_path.as_ref() == Some(&path)
+        }).map(|(&id, _)| id);
 
-        if let Some((pane_id, doc_id)) = editor_pane {
-            match Document::from_file(path) {
-                Ok(doc) => {
-                    self.documents.insert(doc_id, doc);
-                    self.set_focus(pane_id);
+        if let Some(doc_id) = existing_doc {
+            // File already open — find or set the editor pane to show it
+            let editor_pane = self.panes.iter().find(|(_, p)| {
+                matches!(p.content, PaneContent::Editor(did) if did == doc_id)
+            }).map(|(&id, _)| id);
+
+            if let Some(pane_id) = editor_pane {
+                self.set_focus(pane_id);
+            } else if let Some((&pane_id, _)) = self.panes.iter().find(|(_, p)| {
+                matches!(p.content, PaneContent::Editor(_))
+            }) {
+                if let Some(pane) = self.panes.get_mut(&pane_id) {
+                    pane.content = PaneContent::Editor(doc_id);
                 }
-                Err(e) => tracing::error!("Failed to open file: {}", e),
+                self.set_focus(pane_id);
             }
-        } else {
-            let doc_id = self.documents.keys().max().copied().unwrap_or(0) + 1;
-            match Document::from_file(path) {
-                Ok(doc) => {
-                    self.documents.insert(doc_id, doc);
+            return;
+        }
+
+        // New file — create new document
+        let doc_id = self.documents.keys().max().copied().unwrap_or(0) + 1;
+        match Document::from_file(path) {
+            Ok(doc) => {
+                self.documents.insert(doc_id, doc);
+                // Find existing editor pane and switch its content
+                let editor_pane = self.panes.iter().find(|(_, p)| {
+                    matches!(p.content, PaneContent::Editor(_))
+                }).map(|(&id, _)| id);
+
+                if let Some(pane_id) = editor_pane {
+                    if let Some(pane) = self.panes.get_mut(&pane_id) {
+                        pane.content = PaneContent::Editor(doc_id);
+                    }
+                    self.set_focus(pane_id);
+                } else {
                     let pane_id = self.panes.keys().max().copied().unwrap_or(0) + 1;
                     self.panes.insert(pane_id, Pane::editor(pane_id, doc_id));
                     self.session.active_tab_mut().layout.split(
@@ -448,7 +473,52 @@ impl AppState {
                     );
                     self.set_focus(pane_id);
                 }
-                Err(e) => tracing::error!("Failed to open file: {}", e),
+            }
+            Err(e) => tracing::error!("Failed to open file: {}", e),
+        }
+    }
+
+    /// Get the currently active document ID in the editor pane.
+    pub fn active_doc_id(&self) -> Option<usize> {
+        self.panes.iter().find(|(_, p)| {
+            matches!(p.content, PaneContent::Editor(_))
+        }).and_then(|(_, p)| match p.content {
+            PaneContent::Editor(doc_id) => Some(doc_id),
+            _ => None,
+        })
+    }
+
+    /// Close a document and switch the pane to another open document.
+    pub fn close_document(&mut self, doc_id: usize) {
+        self.documents.remove(&doc_id);
+        // Find panes showing this document and switch to another
+        let pane_ids: Vec<usize> = self.panes.iter()
+            .filter(|(_, p)| matches!(p.content, PaneContent::Editor(id) if id == doc_id))
+            .map(|(&id, _)| id)
+            .collect();
+
+        for pane_id in pane_ids {
+            let next_doc = self.documents.keys().next().copied();
+            if let Some(next_id) = next_doc {
+                if let Some(pane) = self.panes.get_mut(&pane_id) {
+                    pane.content = PaneContent::Editor(next_id);
+                }
+            } else {
+                // No docs left — create an empty one
+                let new_id = doc_id.wrapping_add(1000);
+                self.documents.insert(new_id, Document::new());
+                if let Some(pane) = self.panes.get_mut(&pane_id) {
+                    pane.content = PaneContent::Editor(new_id);
+                }
+            }
+        }
+    }
+
+    /// Save the currently focused document.
+    pub fn save_focused(&mut self) {
+        if let Some(doc) = self.focused_editor_doc_mut() {
+            if let Err(e) = doc.save() {
+                tracing::error!("Failed to save: {}", e);
             }
         }
     }
