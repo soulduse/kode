@@ -7,6 +7,32 @@ pub struct RectInstance {
     pub pos: [f32; 2],
     pub size: [f32; 2],
     pub color: [f32; 4],
+    pub border_radius: f32,
+    pub _padding: f32,
+}
+
+impl RectInstance {
+    /// Create a flat rectangle (no rounded corners).
+    pub fn flat(pos: [f32; 2], size: [f32; 2], color: [f32; 4]) -> Self {
+        Self {
+            pos,
+            size,
+            color,
+            border_radius: 0.0,
+            _padding: 0.0,
+        }
+    }
+
+    /// Create a rounded rectangle.
+    pub fn rounded(pos: [f32; 2], size: [f32; 2], color: [f32; 4], radius: f32) -> Self {
+        Self {
+            pos,
+            size,
+            color,
+            border_radius: radius,
+            _padding: 0.0,
+        }
+    }
 }
 
 #[repr(C)]
@@ -40,19 +66,20 @@ impl RectPipeline {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("rect-bind-group-layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("rect-bind-group-layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("rect-bind-group"),
@@ -96,6 +123,12 @@ impl RectPipeline {
                             offset: 16,
                             shader_location: 2,
                             format: wgpu::VertexFormat::Float32x4,
+                        },
+                        // border_radius
+                        wgpu::VertexAttribute {
+                            offset: 32,
+                            shader_location: 3,
+                            format: wgpu::VertexFormat::Float32,
                         },
                     ],
                 }],
